@@ -5,8 +5,12 @@ set.seed(124362)
 
 datos <- read_excel("../../data/ATMs/Base cajeros cierre semana 47.xlsx", sheet = "ok")
 
+# datos2 <- datos %>%
+#   filter(Estado %in% c("DISTRITO FEDERAL", "ESTADO DE MEXICO", "NUEVO LEON", "JALISCO", "GUANAJUATO"))
+
 datos2 <- datos %>%
-  filter(Estado %in% c("DISTRITO FEDERAL", "ESTADO DE MEXICO", "NUEVO LEON", "JALISCO", "GUANAJUATO"))
+  filter(Estado %in% c("DISTRITO FEDERAL"))
+
 
 prop_datos <- datos2 %>% 
   group_by(Estado, `Municipio ó Delegación`) %>% 
@@ -15,7 +19,8 @@ prop_datos <- datos2 %>%
   group_by(Estado) %>% 
   mutate(n2 = sum(n), prop = n/n2)
 
-muestra <- sample_n(datos2, 200)
+muestra <- sample_n(datos2, 101) %>%
+  filter(ID != 'O61127') #ATM en Monterrey que tiene etiqueta de DF
 
 prop_muestra <- muestra %>% 
   group_by(Estado, `Municipio ó Delegación`) %>% 

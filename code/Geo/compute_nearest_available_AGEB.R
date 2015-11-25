@@ -2,10 +2,11 @@
 
 library(spatstat)
 library(fields)
+library(foreign)
 
-Centroides_CP <- readRDS(file = "./Out/Centroides_CP.RDS")
-Centroides_AGEBS <- readRDS(file = "./Out/Centroides_AGEBS.RDS")
-composicion <- read.dbf("../Regiones socioeconómicas de México INEGI/Composición de los estratos/COMAGB.dbf") %>%
+Centroides_CP <- readRDS(file = "../../output/Geo/Centroides_CP.RDS")
+Centroides_AGEBS <- readRDS(file = "../../output/Geo/Centroides_AGEBS.RDS")
+composicion <- read.dbf("../../data/Geo/Regiones socioeconómicas de México INEGI/Composición de los estratos/COMAGB.dbf") %>%
   mutate(id = paste0(ENT, MUN, LOC, AGEB))
 
 Centroides_AGEBS_con_info <- Centroides_AGEBS %>%
@@ -37,5 +38,5 @@ distancias2 <- distancias %>%
   left_join(composicion[,c("id", "E_AGEB", "TIPO")])
 
 
-write.csv(distancias2, file = "./Out/mapeo_CP_AGEB_con_info_socioeconomica.csv", row.names = F)
+write.csv(distancias2, file = "../../output/Geo/mapeo_CP_AGEB_con_info_socioeconomica.csv", row.names = F)
 
