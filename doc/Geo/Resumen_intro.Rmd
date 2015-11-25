@@ -1,0 +1,139 @@
+---
+title: "Resumen estadística espacial"
+author: "Mario Becerra"
+date: "Noviembre 2015"
+output: html_document
+---
+
+```{r, echo=FALSE, warning=FALSE, results='hide', include = FALSE}
+library(rgdal)
+library(ggthemes)
+library(geosphere)
+library(foreign)
+library(dplyr)
+library(ggplot2)
+library(ggthemes)
+library(knitr)
+```
+
+
+Se tiene conocimiento de los códigos postales de los clientes. Se puede utilizar esta información, junto con información pública disponible de INEGI y otras fuentes, para conocer el nivel socioeconómico.
+
+Fuentes de información disponible:
+
+* Regiones socioeconómicas por AGEB (INEGI)
+* Encuesta Nacional de Ingresos y Gastos de los Hogares (INEGI)
+* Índice de marginación por localidad (CONAPO)
+* Rezago social por AGEB (CONEVAL)
+
+Además, se puede encontrar información sobre las coordenadas de los códigos postales del país. Según la página de la oficina de correos de México, existen 32,448 C.P.s distintos; se tiene acceso a un archivo con la geografía de 14,871 de estos códigos postales.
+
+###Problema: 
+Los polígonos de los códigos postales no son equivalentes a los polígonos de las AGEBs ni de las localidades, por lo que se debe de encontrar un mapeo entre el C.P. y la información pública que se utilice.
+
+###Posibles soluciones:
+1. Mapeo de centroides a centroides
+2. Combinación convexa de polígonos
+
+###Primer acercamiento: mapeo de centroides a centroides
+
+Tal vez el acercamiento más sencillo es encontrar el centroide de cada C.P. y el centroide de cada AGEB o localidad y después asignarle a cada código postal el AGEB o localidad que tenga el centroide más cercano.
+
+Ejemplo usando la información de las [regiones socioeconómicas por AGEB del INEGI](http://sc.inegi.gob.mx/niveles/index.jsp?me=ag&ly=99&la=00&at=&ne=ag&nt=95 "Clasificación de AGEBs"):
+
+En este ejemplo se tiene una clasificacion de cada AGEB hecha por el INEGI que pretende  que los AGEBs muestren sus diferencias y similitudes con base en indicadores relacionados con temáticas tales como vivienda, educación, salud y
+empleo, construidos a partir de información del Censo General de Población y Vivienda. Cada AGEB se puede clasificar en 7 estratos de tal forma que en el estrato 7 se encuentran los AGEBs que presentan en promedio la situación relativa más favorable, por el contrario, el estrato 1 se compone de las unidades que en promedio presentan la situación relativa menos favorable.
+
+Para facilidad del ejercicio, el enfoque de este ejemplo será únicamente en las AGEBs del Distrito Federal. A continuación se puede ver un mapa con las AGEBs del D.F. y la clasificación hecha por el INEGI.
+
+```{r, echo=FALSE, warning=FALSE, results='hide', include = FALSE, cache=TRUE}
+composicion <- read.dbf("../Regiones socioeconómicas de México INEGI/Composición de los estratos/COMAGB.dbf")
+agebs_map <- readRDS(file = "./Out/agebs_map_DF.RDS")
+Centroides_AGEBS <- readRDS(file = "./Out/Centroides_AGEBS_DF.RDS")
+estados_map <- readOGR("../Entidades_2010_5A/", layer = "Entidades_2010_5A") %>%
+  spTransform(CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+estados_map <- fortify(estados_map, region = "NOM_ENT")
+colonias_map <- readRDS(file = "./Out/colonias_map_DF.RDS")
+Centroides_CP <- readRDS(file = "./Out/Centroides_CP_DF.RDS")
+
+composicion <- composicion %>%
+  filter(ENT == "09") %>%
+  mutate(id = paste0(ENT, MUN, LOC, AGEB))
+
+agebs_map <- agebs_map %>%
+  left_join(composicion[,c("id", "E_AGEB", "POB")])
+
+```
+```{r, echo=FALSE, fig.height = 7}
+# Mapa con AGEBS con el color dependiendo del tipo de región socioeconómica según INEGI
+ggplot() + 
+  geom_polygon(data = filter(estados_map, id == "Distrito Federal"), aes(long, lat, group=group), colour = 'black', fill = 'white') +
+  geom_polygon(data = agebs_map, aes(long, lat, group=group, fill = factor(E_AGEB)), colour = 'grey30', size = 0.2) +
+  scale_fill_discrete(name="Clasificación", na.value = "grey90") +
+  coord_map(projection="mercator") +
+  theme_map() +
+  ggtitle("Clasificación de las AGEBs en el D.F.") 
+
+```
+
+Después de calcular los centroides de cada AGEB, se tiene el siguiente mapa:
+
+```{r, echo=FALSE, fig.height = 8}
+ggplot() + 
+  geom_polygon(data = filter(estados_map, id == "Distrito Federal"), aes(long, lat, group=group), colour = 'black', fill = 'white') +
+  geom_polygon(data = agebs_map, aes(long, lat, group=group, fill = factor(E_AGEB)), colour = 'grey30', size = 0.2) +
+  geom_point(data = Centroides_AGEBS, aes(x = long, y = lat), size = 1) +
+  scale_fill_discrete(name="Clasificación", na.value = "grey90") +
+  coord_map(projection="mercator") +
+  theme_map() +
+  ggtitle("Clasificación de las AGEBs en el D.F. con centroides") 
+```
+
+La información de las colonias y los códigos postales con sus respectivos centroides se puede ver en el siguiente mapa:
+
+```{r, echo = FALSE, fig.height=7}
+ggplot() + 
+  geom_polygon(data = filter(estados_map, id == "Distrito Federal"), 
+               aes(long, lat, group=group), colour = 'black', fill = 'white') +
+  geom_polygon(data = colonias_map, 
+               aes(long, lat, group=group), 
+               colour = 'blue', 
+               fill = "blue", 
+               alpha = 0.2, 
+               size = 0.2) +
+  geom_point(data = Centroides_CP, aes(x = long, y = lat), size = 1) +
+  coord_map(projection="mercator") +
+  theme_map() +
+  ggtitle("Colonias y C.P.s del D.F.") 
+```
+
+Finalmente, juntando los centroides de AGEBs y de C.P.s se tiene lo siguiente:
+
+```{r, echo=FALSE, fig.height=7}
+ggplot() + 
+  geom_polygon(data = filter(estados_map, id == "Distrito Federal"), 
+               aes(long, lat, group=group), colour = 'black', fill = 'white') +
+  geom_point(data = Centroides_AGEBS, aes(x = long, y = lat), colour = 'red', size = 1.2) +
+  geom_point(data = Centroides_CP, aes(x = long, y = lat), colour = 'blue', size = 1.2) +
+  coord_map(projection="mercator") +
+  theme_map() +
+  ggtitle("Centroides de AGEBs (rojo) y C.P. (azul)")
+
+```
+
+Entonces, para cada C.P. disponible, se busca el centroide de la AGEB más cercano, para hacer un mapeo y a cada código postal asignarle una AGEB. De tal forma que obtengamos una tabla de este estilo:
+
+```{r, echo = FALSE}
+mapeo <- read.csv("./Out/mapeo_CP_AGEB.csv", nrow = 10)
+names(mapeo) <- c("C.P.", "C.P. long", "C.P. lat", "AGEB más cercana", "AGEB long", "AGEB lat", "distancia")
+kable(mapeo)
+```
+
+
+Este acercamiento puede fallar, pues, como se puede ver, los polígonos de los C.P.s en el D.F. tienden a ser mayores que las AGEBs, entonces se está ignorando la heterogeneidad de cada C.P. En este caso en el que la variable _proxy_ es una variable categórica, es más complicado usar otro tipo de acercamiento; sin embargo, tal vez se podría reconstruir el índice que utiliza INEGI para cada AGEB pero para cada C.P. utilizando la combinación convexa de las variables que se utilizan. Ese es el segundo acercamiento mencionado anteriormente.
+
+###Segundo acercamiento: pendiente
+
+
+
+

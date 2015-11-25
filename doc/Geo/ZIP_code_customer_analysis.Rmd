@@ -1,0 +1,369 @@
+---
+title: "ZIP code customer analysis"
+author: "Mario Becerra / Gerson Romero"
+date: "November 2015"
+output: html_document
+---
+
+```{r, echo=FALSE, warning=FALSE, results='hide', include = FALSE}
+library(rgdal)
+library(ggthemes)
+library(geosphere)
+library(foreign)
+library(dplyr)
+library(ggplot2)
+library(ggthemes)
+library(knitr)
+```
+
+##Introduction
+
+We have information about the customers' ZIP code. This information could be used, with public available information from sources like INEGI, to know the socioeconomic level of each savings customer.
+
+Available sources:
+
+* Socioeconomic regions by AGEB (INEGI)
+* National Home Income and Expenditure Survey, ENIGH (INEGI)
+* Margination index by locality (CONAPO)
+* Social gap by AGEB (CONEVAL)
+
+AGEB stands for Área GeoEstadística Básica (Basic Geostatistical Area), and a locality is a general term used by CONAPO to define several AGEBs.
+
+This document uses information from the [socioeconomic regions defined by INEGI](http://sc.inegi.gob.mx/niveles/index.jsp?me=ag&ly=99&la=00&at=&ne=ag&nt=95 "AGEB classification").
+
+ZIP code geographical information is available. According to the official postal code webpage, there are 32,448 different ZIP codes in Mexico, from which 14,871 are available as shape files.
+
+###Problem: 
+The polygons defining the ZIP codes aren't equivalent to the polygons defining the AGEBs, so a mapping between them is needed to be able to use the public available information.
+
+###Possible solutions:
+1. Mapping from centroid to centroid
+2. Polygon convex combination
+
+###First approach: mapping from centroid to centroid
+
+Perhaps the simplest solution is to find the centroid of each ZIP code and AGEB, and then just map a given ZIP code to the closest AGEB centroid.
+ 
+We have a classification for each AGEB that pretends to show the differences among AGEBs based on indicators related with housing, education, health and employment, built from the last population census. Each AGEB can be classified in 7 strata such that stratum 7 contains AGEBs with the most favorable average conditions, and in stratum 1 are the AGEBs with the least favorable average conditions.
+
+In the next images, maps of Mexico City and surroundings, Monterrey and Guadalajara are shown.
+
+```{r, echo=FALSE, warning=FALSE, results='hide', include = FALSE, cache=TRUE}
+composicion <- read.dbf("../Regiones socioeconómicas de México INEGI/Composición de los estratos/COMAGB.dbf")
+agebs_map <- readRDS(file = "./Out/agebs_map.RDS")
+Centroides_AGEBS <- readRDS(file = "./Out/Centroides_AGEBS.RDS")
+estados_map <- readOGR("../Entidades_2010_5A/", layer = "Entidades_2010_5A") %>%
+  spTransform(CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+estados_map <- fortify(estados_map, region = "NOM_ENT")
+colonias_map <- readRDS(file = "./Out/colonias_map.RDS")
+Centroides_CP <- readRDS(file = "./Out/Centroides_CP.RDS")
+```
+```{r, echo=FALSE, warning=FALSE, results='hide', include = FALSE, cache=TRUE}
+composicion_DF <- composicion %>%
+  filter(ENT == "09" | ENT == "15") %>%
+  mutate(id = paste0(ENT, MUN, LOC, AGEB))
+
+agebs_map_DF <- agebs_map %>%
+                mutate(sub_id = substr(id, 1, 2)) %>%
+                filter(sub_id == "09" | sub_id == "15") %>%
+                select(-sub_id) %>%
+                left_join(composicion_DF[,c("id", "E_AGEB", "POB")])
+```
+```{r, echo=FALSE, fig.height = 8, fig.width=8, warning=FALSE}
+# Mapa con AGEBS con el color dependiendo del tipo de región socioeconómica según INEGI
+# ggplot() + 
+#   geom_polygon(data = filter(estados_map, id == "Distrito Federal" | id == "México"), 
+#                aes(long, lat, group=group), 
+#                colour = 'black', 
+#                fill = 'white') +
+#   geom_polygon(data = agebs_map_DF, aes(long, lat, group=group, fill = factor(E_AGEB)), colour = 'grey30', size = 0.2) +
+#   scale_fill_discrete(name="Clasificación", na.value = "grey90") +
+#   coord_map(projection="mercator") +
+#   theme_map() +
+#   ggtitle("Clasificación de las AGEBs en el D.F. y A.M.") 
+
+ggplot() + 
+  geom_polygon(data = filter(estados_map, id == "Distrito Federal"), 
+               aes(long, lat, group=group), 
+               colour = 'black', 
+               fill = 'white') +
+  geom_polygon(data = agebs_map_DF, aes(long, lat, group=group, fill = factor(E_AGEB)), colour = 'grey30', size = 0.2) +
+  scale_fill_discrete(name="Classification", na.value = "grey90") +
+  coord_map(projection="mercator") +
+  theme_map() +
+  ylim(19, 19.75) +
+  xlim(-99.4, -98.8) +
+  ggtitle("AGEB classification in Mexico City and its surroundings")
+
+```
+
+Map with centroids of each polygon:
+
+```{r, echo=FALSE, fig.height = 8, fig.width=8, warning=FALSE}
+ggplot() + 
+  geom_polygon(data = filter(estados_map, id == "Distrito Federal"), 
+               aes(long, lat, group=group), 
+               colour = 'black', 
+               fill = 'white') +
+  geom_polygon(data = agebs_map_DF, aes(long, lat, group=group, fill = factor(E_AGEB)), colour = 'grey30', size = 0.2) +
+  scale_fill_discrete(name="Classification", na.value = "grey90") +
+  geom_point(data = Centroides_AGEBS, aes(x = long, y = lat), size = 1) +
+  coord_map(projection="mercator") +
+  theme_map() +
+  ylim(19, 19.75) +
+  xlim(-99.4, -98.8) +
+  ggtitle("AGEB classification in Mexico City and its surroundings with polygon centroids")
+```
+
+Now, same map for Guadalajara, Jalisco:
+
+```{r, echo=FALSE, warning=FALSE, results='hide', include = FALSE, cache=TRUE}
+composicion_Jal <- composicion %>%
+  filter(ENT == "14") %>%
+  mutate(id = paste0(ENT, MUN, LOC, AGEB))
+
+agebs_map_Jal <- agebs_map %>%
+                mutate(sub_id = substr(id, 1, 2)) %>%
+                filter(sub_id == "14") %>%
+                select(-sub_id) %>%
+                left_join(composicion_Jal[,c("id", "E_AGEB", "POB")])
+```
+```{r, echo=FALSE, fig.height = 8, fig.width=8, warning=FALSE}
+ggplot() + 
+  geom_polygon(data = agebs_map_Jal, aes(long, lat, group=group, fill = factor(E_AGEB)), colour = 'grey30', size = 0.2) +
+  scale_fill_discrete(name="Classification", na.value = "grey90") +
+  geom_point(data = Centroides_AGEBS, aes(x = long, y = lat), size = 1) +
+  coord_map(projection="mercator") +
+  theme_map() +
+  ylim(20.4, 20.81) +
+  xlim(-103.57, -103.18) +
+  ggtitle("AGEB classification in Guadalajara and its surroundings with polygon centroids")
+```
+
+And finally, for Monterrey, Nuevo León:
+
+```{r, echo=FALSE, warning=FALSE, results='hide', include = FALSE, cache=TRUE}
+composicion_NL <- composicion %>%
+  filter(ENT == "19") %>%
+  mutate(id = paste0(ENT, MUN, LOC, AGEB))
+
+agebs_map_NL <- agebs_map %>%
+                mutate(sub_id = substr(id, 1, 2)) %>%
+                filter(sub_id == "19") %>%
+                select(-sub_id) %>%
+                left_join(composicion_NL[,c("id", "E_AGEB", "POB")])
+```
+```{r, echo=FALSE, fig.height = 8, fig.width=8, warning=FALSE}
+ggplot() + 
+  geom_polygon(data = agebs_map_NL, aes(long, lat, group=group, fill = factor(E_AGEB)), colour = 'grey30', size = 0.2) +
+  scale_fill_discrete(name="Classification", na.value = "grey90") +
+  geom_point(data = Centroides_AGEBS, aes(x = long, y = lat), size = 1) +
+  coord_map(projection="mercator") +
+  theme_map() +
+  ylim(25.25, 26) +
+  xlim(-100, -100.7) +
+  ggtitle("AGEB classification in Monterrey and its surroundings with polygon centroids")
+```
+
+ZIP code information with their centroids can be seen in the next map of Mexico City:
+
+```{r, echo = FALSE, fig.height=7, warning=FALSE}
+ggplot() + 
+  geom_polygon(data = filter(estados_map, id == "Distrito Federal"), 
+               aes(long, lat, group=group), colour = 'black', fill = 'white') +
+  geom_polygon(data = filter(colonias_map, ST_NAME == "DISTRITO FEDERAL" | ST_NAME == "MEXICO"), 
+               aes(long, lat, group=group), 
+               colour = 'blue', 
+               fill = "blue", 
+               alpha = 0.2, 
+               size = 0.2) +
+  geom_point(data = Centroides_CP, aes(x = long, y = lat), size = 1) +
+  ylim(19, 19.75) +
+  xlim(-99.4, -98.8) +
+  coord_map(projection="mercator") +
+  theme_map() +
+  ggtitle("ZIP codes of Mexico City and its surroundings") 
+```
+
+ZIP code information with their centroids can be seen in the next map of Guadalajara. Some of the centroids may not match perfectly the polygon plotted because the database considers a the ZIP code and the identifier as a different group.
+
+```{r, echo = FALSE, fig.height=7, warning=FALSE}
+ggplot() + 
+  geom_polygon(data = filter(colonias_map, ST_NAME == "JALISCO"), 
+               aes(long, lat, group=group), 
+               colour = 'blue', 
+               fill = "blue", 
+               alpha = 0.2, 
+               size = 0.2) +
+  geom_point(data = Centroides_CP, aes(x = long, y = lat), size = 1) +
+  ylim(20.5, 20.9) +
+  xlim(-103.6, -103.15) +
+  coord_map(projection="mercator") +
+  theme_map() +
+  ggtitle("ZIP codes of Guadalajara and its surroundings") 
+```
+
+ZIP code information with their centroids can be seen in the next map of Monterrey:
+
+```{r, echo = FALSE, fig.height=7, warning=FALSE}
+ggplot() + 
+  geom_polygon(data = filter(colonias_map, ST_NAME == "NUEVO LEON"), 
+               aes(long, lat, group=group), 
+               colour = 'blue', 
+               fill = "blue", 
+               alpha = 0.2, 
+               size = 0.2) +
+  geom_point(data = Centroides_CP, aes(x = long, y = lat), size = 1) +
+  ylim(25.25, 26) +
+  xlim(-100, -100.7) +
+  coord_map(projection="mercator") +
+  theme_map() +
+  ggtitle("ZIP codes of Monterrey and its surroundings") 
+```
+
+Finally, plotting the centroids of AGEBs and ZIP codes in Mexico City altogether we get:
+
+```{r, echo=FALSE, fig.height=7, warning=FALSE}
+ggplot() + 
+  geom_polygon(data = filter(estados_map, id == "Distrito Federal"), 
+               aes(long, lat, group=group), colour = 'black', fill = 'white') +
+  geom_point(data = Centroides_AGEBS, aes(x = long, y = lat), colour = 'red', size = 1.2) +
+  geom_point(data = Centroides_CP, aes(x = long, y = lat), colour = 'blue', size = 1.2) +
+  ylim(19, 19.75) +
+  xlim(-99.4, -98.8) +
+  coord_map(projection="mercator") +
+  theme_map() +
+  ggtitle("Centroids of AGEBs (red) y Zip codes (blue) in Mexico City")
+
+```
+
+Guadalajara:
+
+```{r, echo=FALSE, fig.height=7, warning=FALSE}
+ggplot() + 
+  geom_point(data = Centroides_AGEBS, aes(x = long, y = lat), colour = 'red', size = 1.2) +
+  geom_point(data = Centroides_CP, aes(x = long, y = lat), colour = 'blue', size = 1.2) +
+  ylim(20.5, 20.9) +
+  xlim(-103.6, -103.15) +
+  coord_map(projection="mercator") +
+  theme_map() +
+  ggtitle("Centroids of AGEBs (red) y Zip codes (blue) in Guadalajara")
+
+```
+
+Monterrey:
+
+```{r, echo=FALSE, fig.height=7, warning=FALSE}
+ggplot() + 
+  geom_polygon(data = filter(estados_map, id == "Distrito Federal"), 
+               aes(long, lat, group=group), colour = 'black', fill = 'white') +
+  geom_point(data = Centroides_AGEBS, aes(x = long, y = lat), colour = 'red', size = 1.2) +
+  geom_point(data = Centroides_CP, aes(x = long, y = lat), colour = 'blue', size = 1.2) +
+  ylim(25.25, 26) +
+  xlim(-100, -100.7) +
+  coord_map(projection="mercator") +
+  theme_map() +
+  ggtitle("Centroids of AGEBs (red) y Zip codes (blue) in Monterrey")
+
+```
+
+So, for each available ZIP code, the closest AGEB centroid is found and a mapping is made to assign an AGEB to each ZIP code, such that we get a table in the following format:
+
+```{r, echo = FALSE}
+mapeo <- read.csv("./Out/mapeo_CP_AGEB_con_info_socioeconomica.csv", nrow = 10) %>%
+  select(-id, -distance, -TIPO)
+names(mapeo) <- c("ZIP", "ZIP long", "ZIP lat", "Nearest AGEB", "AGEB long", "AGEB lat", "Distance in Km", "Classification")
+kable(mapeo)
+```
+
+This approach may fail since, as one can see, ZIP code polygons are generally bigger in area than AGEBs, so the heterogeneity of each ZIP code is being ignored. 
+
+###Second approach: pending
+
+##Customer analysis
+
+```{r, echo = FALSE}
+mapeo <- read.csv("./Out/mapeo_CP_AGEB_con_info_socioeconomica.csv") %>%
+  select(-id, -distance)
+
+as.data.frame(prop.table(table(mapeo$E_AGEB))) %>% ggplot() + geom_bar(aes(x = Var1, y = Freq), stat = 'identity')
+
+```
+
+First, let's see what's the distribution of the classification of AGEBs in the country. Remember that 7 is that the AGEB is "good" in average and that 1 is that it's "bad".
+
+```{r, echo=FALSE}
+as.data.frame(prop.table(table(composicion$E_AGEB))) %>% 
+  ggplot() + 
+  geom_bar(aes(x = Var1, y = Freq), stat = 'identity') +
+  ylab("Percentage of AGEBs") +
+  xlab("Classification of AGEB")
+```
+
+And now, the mapping of the ZIP codes:
+
+```{r, echo=FALSE}
+as.data.frame(prop.table(table(mapeo$E_AGEB))) %>% 
+  ggplot() + 
+  geom_bar(aes(x = Var1, y = Freq), stat = 'identity') +
+  ylab("Percentage of ZIP codes") +
+  xlab("Classification of ZIP code according to our mapping")
+```
+
+The distribution changed drastically. As we can see in the following graph, originally the AGEBs were urban (U) and rural (R), but the mapping consists of only urban ZIP codes; so this may be a reason of why the distribution changed so much.
+
+```{r, echo=FALSE}
+temp <- rbind(as.data.frame(prop.table(table(composicion$TIPO))),
+              as.data.frame(prop.table(table(mapeo$TIPO))))
+temp$type = c("AGEB", "AGEB", "ZIP code")
+ggplot(temp) + 
+  geom_bar(aes(x = Var1, y = Freq), stat = 'identity') +
+  facet_wrap(~type) +
+  xlab("Area (Rural or Urban)") +
+  ylab("Percentage")
+
+```
+
+And now let's analyze the sample with 1 million savings customers.
+
+```{r, cache=TRUE, echo=FALSE}
+datos <- readRDS("../crédito y captación.RDS")
+names(datos) <- gsub(" ", "_", names(datos))
+
+datos <- datos %>%
+  mutate(zip_code = substr(zip_code, 2, 6),
+         cred_zip_code = substr(cred_zip_code, 2, 6),
+         CP = as.integer(zip_code)) %>%
+  left_join(mapeo[,c("CP", "E_AGEB")]) %>%
+  select(-CP)
+```
+
+Out of the 1 million people, we have the mapping ZIP code for 'r sum(datos$zip_code %in% mapeo$CP)' of them, which are distributed the following way:
+
+```{r, echo = FALSE}
+as.data.frame(prop.table(table(datos$E_AGEB))) %>%
+  ggplot() + 
+  geom_bar(aes(x = Var1, y = Freq), stat = 'identity') +
+  ylab("Percentage of customers") +
+  xlab("Classification of customer according to our mapping")
+```
+
+```{r, echo=FALSE}
+num_clientes_por_cp <- datos %>%
+  group_by(zip_code) %>%
+  tally() %>%
+  mutate(CP = as.integer(zip_code)) %>%
+  inner_join(mapeo)
+
+ggplot() + 
+    geom_polygon(data = estados_map, 
+                 aes(long, lat, group=group), colour = 'black', fill = 'white') +
+    geom_point(data = num_clientes_por_cp, aes(x = CP_long, y = CP_lat, size = n, colour = as.factor(E_AGEB))) +
+    coord_map(projection="mercator") +
+    theme_map() +
+    ggtitle("Location of customers")
+```
+
+
+
+
