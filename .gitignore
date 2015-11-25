@@ -13,3 +13,4 @@ vignettes/*.html
 vignettes/*.pdf
 data/*
 output/*
+doc/private/*
