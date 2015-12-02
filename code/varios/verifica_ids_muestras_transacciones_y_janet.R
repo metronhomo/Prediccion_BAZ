@@ -1,3 +1,6 @@
+#Verifica que los ids de la muestra transaccional mensual (1,434,148 clientes) estén en la base con 70 variables (1,859,441 clientes)
+# (Sí están)
+
 library(dplyr)
 
 df <- read.table("../../output/Preprocesamiento/datos.txt",
@@ -72,19 +75,23 @@ df <- read.table("../../output/Preprocesamiento/datos.txt",
                  ))
 
 df2 <- df %>% select(FIID_CLIENTE_UNICO, NPAIS, NCANAL, NSUCURSAL, NFOLIO) %>% unique()
-df2$id <- paste(sprintf("%02d", df2$NPAIS), 
+
+rm(df)
+
+ids1 <- paste(sprintf("%02d", df2$NPAIS), 
                 sprintf("%02d", df2$NCANAL), 
                 sprintf("%04d", df2$NSUCURSAL), 
                 sprintf("%06d", df2$NFOLIO), 
                 sep = "")
 
-rm(df)
+
 
 datos <- readRDS("../../output/SFTP/crédito y captación.RDS")
-datos$id <- paste(sprintf("%02d", datos$NPAIS), 
+ids2 <- paste(sprintf("%02d", datos$NPAIS), 
                   sprintf("%02d", datos$NCANAL), 
                   sprintf("%04d", datos$NSUCURSAL), 
                   sprintf("%06d", datos$NFOLIO), 
                   sep = "")
 
-idx <- df2$id %in% datos$id
+ids1 %in% ids2 %>% sum()
+

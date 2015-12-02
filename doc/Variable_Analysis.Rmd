@@ -1,0 +1,122 @@
+---
+title: "Variable Analysis"
+author: "Metronhomo"
+date: "November 4, 2015"
+output: html_document
+---
+
+```{r,message=FALSE,warning=FALSE}
+library(knitr)
+library(ggplot2)
+library(dplyr)
+
+capta<-readRDS("data/team_data/captacion.RDS")
+cred<-readRDS("data/team_data/credito.RDS")
+trans<-readRDS("data/team_data/transacciones_largo.RDS")
+names(trans)[18]<-"baz_rm"
+
+df2<-readRDS("data/team_data/df2.RDS")
+df3<-readRDS("data/team_data/df3.RDS")
+```
+
+#Transactions and Amount
+
+```{r,message=FALSE,warning=FALSE}
+quintiles<-readRDS("data/team_data/transacciones_monto_quintiles.RDS")
+kable(quintiles)
+```
+
+#Gender
+
+```{r,message=FALSE,warning=FALSE,fig.align="center"}
+capta %>%
+  filter(gender %in% c("M","F")) %>%
+  group_by(gender) %>%
+  tally() %>%
+  mutate(p=n/sum(n)) %>%
+ggplot(aes(x=gender,y=p)) +
+    geom_bar(stat="identity") 
+```
+
+#Tenure
+
+```{r,message=FALSE,warning=FALSE,fig.align="center"}
+capta$`savings aplication date` <- as.Date(capta$`savings aplication date`,"%d/%m/%y")
+
+capta<-capta %>%
+  mutate(dif=as.numeric(difftime("2015-08-31",`savings aplication date`,units = "weeks")/52))
+  
+ggplot(capta,aes(x=dif)) +
+  geom_histogram(aes(y=..count../sum(..count..)),binwidth=1/12) +
+  geom_vline(xintercept = c(quantile(capta$dif,0.25,na.rm=T),quantile(capta$dif,0.75,na.rm = T),median(capta$dif,na.rm=T)),
+             size = 1.2,color = 'red') +
+  ylab("Number of customers") +
+  xlab("Tenure in years")
+```
+
+#Income Level
+
+Just in credit
+
+#Industry/Type of job
+
+Just in credit
+
+#Salary based on transactions
+
+```{r,message=FALSE,warning=FALSE,fig.align="center"}
+ggplot(df2) + 
+  geom_histogram(aes(freq), binwidth = 0.03) +
+  geom_vline(xintercept = c(quantile(df2$freq,0.25,na.rm=T),quantile(df2$freq,0.75,na.rm = T),median(df2$freq,na.rm=T)),
+             size = 1.2,color = 'red')
+
+# Número de meses / Total de meses
+# Entre 0 y 1, donde: 
+# 1 significa que hizo alguna actividad en todos los meses en los que tiene registrado
+# 0 sigifica que no hizo ninguna actividad en todos los meses que tiene registrado (nunca va a ser cero aquí)
+
+length(which(df2$freq>=.5))
+
+length(which(df2$freq>=.75))
+```
+
+#Time of the day
+
+Nope --> Month_day
+
+#Crime Rate
+
+Nope
+
+#Average time between transactions
+
+Nope --> Month_day
+
+#Frequency of transactions
+
+Nope --> Month_day
+
+#Investment Account?
+
+Nope but feasible
+
+#e-banking account
+
+```{r}
+kable(as.data.frame(round(100*prop.table(table(capta$`electronic banking`)), 2)))
+kable(as.data.frame(round(100*prop.table(table(capta$`active electronic banking`)), 2)))
+```
+
+#Months with more activity
+
+```{r,message=FALSE,warning=FALSE,fig.align="center"}
+ggplot(df3,aes(x=mes)) +
+  geom_line(aes(y=-retiros_prom,colour="Withdrawal",group=1),stat="identity") +
+  geom_line(aes(y=abonos_prom,colour="Deposit",group=2),stat="identity") +
+  theme(legend.title=element_blank()) +
+  xlab("Month") +
+  ylab("Average Amount")
+```
+
+
+
