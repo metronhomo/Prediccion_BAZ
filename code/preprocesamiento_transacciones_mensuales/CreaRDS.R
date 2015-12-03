@@ -1,4 +1,4 @@
-df <- read.table("../data/datos.txt",
+df <- read.table("../../output/preprocesamiento_transacciones_mensuales/datos.txt",
                  sep = "|",
                  col.names = c(
                    "Credito",
@@ -69,4 +69,6 @@ df <- read.table("../data/datos.txt",
                    "numeric"
                  ))
 
-saveRDS(df, file = "../data/df.RDS")
+#Antes:
+# saveRDS(df, file = "../../output/Transacciones mensuales/df.RDS")
+saveRDS(df, file = "../../output/Transacciones mensuales/transacciones_mensuales_muestra.RDS")
