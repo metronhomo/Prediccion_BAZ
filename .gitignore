@@ -14,5 +14,5 @@ vignettes/*.pdf
 data/*
 output/*
 doc/private/*
-(.*)_cache
-(.*)_files
+*_cache
+*_files
