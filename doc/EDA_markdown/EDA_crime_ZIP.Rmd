@@ -7,6 +7,7 @@ output: html_document
 
 ```{r setup, echo=FALSE, message=FALSE, warning=FALSE, comment=FALSE, include=FALSE}
 library(rgdal)
+library(readxl)
 library(ggthemes)
 library(geosphere)
 library(foreign)
@@ -168,6 +169,37 @@ df3 <- df %>%
 saveRDS(df3,
         file = "../../output/EDA_markdown_preprocessing/resumen_global_mensual_abonos_retiros.RDS")
 
+
+#####ATMs
+
+atms <- read_excel("../../data/ATMs/Base cajeros cierre semana 47.xlsx", sheet = "ok") %>%
+  mutate(Estado = gsub(pattern = " CHIHUAHUA", 
+                       replacement = "CHIHUAHUA", Estado),
+         Estado = gsub(pattern = "QUERATARO", 
+                       replacement = "QUERETARO", Estado),
+         Estado = gsub(pattern = "COAHUILA ", 
+                       replacement = "COAHUILA", Estado)) %>%
+  filter(ID!="O02781")
+
+estados_map <- readOGR("../../data/Geo/estados_ligero/" , "Mex_Edos") %>%
+  spTransform(CRS("+proj=longlat +datum=WGS84"))
+
+estados_map_f <- fortify(estados_map)
+
+saveRDS(atms, file = "../../output/EDA_markdown_preprocessing/atms.RDS")
+saveRDS(estados_map_f, file = "../../output/EDA_markdown_preprocessing/estados_map_f.RDS")
+
+##### Mapa municipios
+
+municipios_map <- readOGR("../../data/Geo/Municipios_2013/" , "Municipios_2013")
+
+municipios_map@data$id <- paste(municipios_map@data$CVE_ENT,
+                                         municipios_map@data$CVE_MUN,
+                                         sep = "")
+
+municipios_map_f <- fortify(municipios_map, region = "id") %>%
+  left_join(municipios_map@data)
+saveRDS(municipios_map_f, file = "../../output/EDA_markdown_preprocessing/municipios_map_f.RDS")
 ```
 
 
@@ -723,8 +755,30 @@ ggplot() +
     ggtitle("Location of customers")
 ```
 
+#ATM information
+
+We have potential information regarding all the transactions in every ATM, and we have the exact location of each ATM (as can be seen in the following map). So, the idea is to use this information to know the income spatial distribution.
+
+```{r}
+atms <- readRDS(file = "../../output/EDA_markdown_preprocessing/atms.RDS")
+estados_map_f <- readRDS(file = "../../output/EDA_markdown_preprocessing/estados_map_f.RDS")
+
+ggplot() + 
+  geom_polygon(data = estados_map_f, aes(long, lat, group=group),colour='darkgrey', fill='white') +
+  geom_point(data=atms, aes(Longitud,Latitud)) +
+  #geom_point(data=estados_muestra,aes(Longitud,Latitud),colour="red") +
+  coord_map(projection="mercator") +
+  theme_map()
+```
+
+
 
 #Crime Rate
+
+```{r}
+municipios_map_f <- readRDS(file = "../../output/EDA_markdown_preprocessing/municipios_map_f.RDS")
+```
+
 
 Pending
 

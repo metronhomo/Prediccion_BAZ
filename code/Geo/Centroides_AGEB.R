@@ -1,3 +1,5 @@
+# Centroides_AGEB.R
+
 library(rgdal)
 library(dplyr)
 library(ggplot2)
