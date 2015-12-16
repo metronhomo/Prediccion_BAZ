@@ -1,7 +1,8 @@
 library(dplyr)
 library(rgdal)
 library(ggplot2)
-library(geosphere)
+#library(geosphere)
+library(rgeos)
 
 # Lee el dataframe preprocesado que contiene los shapefiles de los CPs de México
 # Información original: KML descargado de datos.gob.mx
@@ -28,15 +29,24 @@ colonias_map <- fortify(temp, region = "OBJECTID") %>%
   mutate(OBJECTID = id) %>%
   left_join(colonias)
 
-# Hace una lista en la que cada elemento es un CP que contiene a las coordenadas del polígono que lo define
+# Hace una lista en la que cada elemento es un CP que contiene a las 
+# coordenadas del polígono que lo define en un objeto de tipo SpatialPoints
 CPs_col <- colonias_map %>%
   select(long, lat, POSTALCODE) %>%
   mutate(CP = as.character(POSTALCODE))
 lista_navteq <- with(CPs_col, split(c(long, lat), CP, drop = T)) 
-lista_navteq <- lapply(lista_navteq, function(x) as.data.frame(matrix(x, ncol = 2)))
+#lista_navteq <- lapply(lista_navteq, function(x) as.data.frame(matrix(x, ncol = 2)))
+lista_navteq <- lapply(lista_navteq, function(x) {
+  SpatialPoints(
+    matrix(x, ncol = 2) ,
+    CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+})
 
 # Calcula los centroides
-Centroides_CP_navteq <- t(sapply(lista_navteq, centroid)) %>% as.data.frame()
+#Centroides_CP_navteq <- t(sapply(lista_navteq, centroid)) %>% as.data.frame()
+Centroides_CP_navteq <- t(sapply(lista_navteq, function(x){
+    a <- gCentroid(x)
+    a@coords })) %>% as.data.frame()
 Centroides_CP_navteq$CP <- names(lista_navteq)
 names(Centroides_CP_navteq) <- c("long", "lat", "CP")
 Centroides_CP_navteq2 <- Centroides_CP_navteq %>%
@@ -48,9 +58,18 @@ CPs_col <- CP_map %>%
   select(long, lat, CP) %>%
   mutate(CP = as.character(CP))
 lista <- with(CPs_col, split(c(long, lat), CP, drop = T)) 
-lista <- lapply(lista, function(x) as.data.frame(matrix(x, ncol = 2)))
+lista <- lapply(lista, function(x) {
+  SpatialPoints(
+    matrix(x, ncol = 2) ,
+    CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+})
 
-Centroides_CP <- t(sapply(lista, centroid)) %>% as.data.frame()
+Centroides_CP <- t(sapply(lista, function(x){
+    a <- gCentroid(x)
+    a@coords
+  })
+  ) %>% as.data.frame()
+#Centroides_CP <- t(sapply(lista, centroid)) %>% as.data.frame()
 Centroides_CP$CP <- names(lista)
 names(Centroides_CP) <- c("long", "lat", "CP")
 Centroides_CP2 <- Centroides_CP %>%

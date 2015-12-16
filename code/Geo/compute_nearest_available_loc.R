@@ -48,5 +48,5 @@ distancias2 <- distancias %>%
   left_join(ind_marg)
 
 
-write.csv(distancias2, file = "../../output/Geo/mapeo_CP_AGEB_con_info_socioeconomica.csv", row.names = F)
+write.csv(distancias2, file = "../../output/Geo/mapeo_CP_localidad.csv", row.names = F)
 

@@ -4,7 +4,8 @@ library(rgdal)
 library(dplyr)
 library(ggplot2)
 library(ggthemes)
-library(geosphere)
+#library(geosphere)
+library(rgeos)
 
 # cves_edo_mun <- read.csv("../Claves Estados.csv")
 
@@ -31,15 +32,31 @@ loc_urb_gg <- fortify(loc_urb_map, region = "id")
 loc_rur_df <- as.data.frame(loc_rur_map)
 names(loc_rur_df)[7:9] <- c("id_loc", "long", "lat")
 
-# Id's de localidades urbanas
-loc_urb_id <- unique(loc_urb_gg$id)
-lista <- lapply(loc_urb_id, 
-                function(x) {
-                  filter(loc_urb_gg, id == x)[,c("long", "lat")]
-                  })
-names(lista) <- loc_urb_id
+# # Lista de coordenadas de polígonos de localidades urbanas
+# loc_urb_id <- unique(loc_urb_gg$id)
+# lista <- lapply(loc_urb_id, 
+#                 function(x) {
+#                   filter(loc_urb_gg, id == x)[,c("long", "lat")]
+#                   })
+# names(lista) <- loc_urb_id
+# 
 
-Centroides_localidades_urbanas <- t(sapply(lista, centroid)) %>% as.data.frame()
+# Hace una lista en la que cada elemento es una comunidad urbana 
+# que contiene a las coordenadas del polígono que lo define
+loc_urb_long_lat <- loc_urb_gg %>%
+  select(long, lat, id)
+lista <- with(loc_urb_long_lat, split(c(long, lat), id, drop = T)) 
+lista <- lapply(lista, function(x) {
+  SpatialPoints(
+    matrix(x, ncol = 2) ,
+    CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+  })
+
+# Calcula centroides de las localidades
+Centroides_localidades_urbanas <- t(sapply(lista, function(x){
+  a <- gCentroid(x)
+  a@coords })) %>% 
+  as.data.frame()
 Centroides_localidades_urbanas$id_loc <- names(lista)
 names(Centroides_localidades_urbanas) <- c("long", "lat", "id_loc")
 
