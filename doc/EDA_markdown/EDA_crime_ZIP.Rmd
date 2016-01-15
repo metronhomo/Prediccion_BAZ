@@ -16,9 +16,13 @@ library(ggplot2)
 library(plyr)
 library(tidyr)
 library(dplyr)
+library(lubridate)
 knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE, fig.align="center")
 ```
-
+```{r}
+x_axis_vert <- function(ang = 90) theme(axis.text.x = element_text(angle = ang, vjust = 0.5, hjust=1))
+get_name <- function(object) {out<-deparse(substitute(object)); out} 
+```
 
 #Introduction
 
@@ -202,7 +206,6 @@ municipios_map_f <- fortify(municipios_map, region = "id") %>%
   left_join(municipios_map@data)
 saveRDS(municipios_map_f, file = "../../output/EDA_markdown_preprocessing/municipios_map_f.RDS")
 ```
-
 
 ```{r}
 datos <- readRDS("../../output/SFTP/crédito y captación.RDS")
@@ -392,6 +395,24 @@ resumen_global_mensual_abonos_retiros %>%
 ```{r}
 rm(suma_abonos_retiros_por_usuario)
 ```
+
+#Histogram of date of first usage of credit
+
+```{r}
+prim_surt <- readRDS("../../output/Varios/catalogo_primer_surtimiento.RDS")
+
+prim_surt %>% 
+  filter(FECHA_PRIM_SURT >= "2014-01-01") %>% 
+  ggplot() + 
+  geom_histogram(aes(FECHA_PRIM_SURT),
+                 binwidth = 7) + 
+  scale_x_date(breaks = "1 month") +
+  x_axis_vert() +
+  xlab("Date of first credit") +
+  ylab("Number of customers")
+```
+
+It can be seen that the number of people taking credits has been decreasing.
 
 #Geography
 
@@ -968,7 +989,7 @@ ggplot(temp) +
 
 ```
 
-And now let's analyze the sample with 1 million savings customers and circa 800 thousand credit customers  .
+And now let's analyze the sample with 1 million savings customers and circa 800 thousand credit customers.
 
 ```{r, cache=TRUE, echo=FALSE}
 
@@ -990,6 +1011,16 @@ as.data.frame(prop.table(table(datos3$E_AGEB))) %>%
   xlab("Classification of customer according to our mapping")
 ```
 
+And now, conditioning on whether it's a credit or savings customer: 
+
+```{r, echo = FALSE}
+as.data.frame(prop.table(table(datos3$E_AGEB, datos3$credit_or_savings)))  %>%   ggplot() + 
+    geom_bar(aes(x = Var1, y = Freq), stat = 'identity') +
+    facet_wrap(~Var2, scales = 'free_y') +
+    ylab("Percentage of customers") +
+    xlab("Classification of customer according to our mapping")
+```
+
 ```{r, echo=FALSE}
 num_clientes_por_cp <- datos3 %>%
   group_by(zip_code) %>%
@@ -1007,14 +1038,74 @@ ggplot() +
 ```
 
 
+```{r, fig.height=60, fig.width=10}
+datos_modelo <- readRDS("../../output/Modelos/df_resumen_variables_transaccionales_crimen_pobreza.RDS")
+
+plot_distribucion_modelo <- function(df, var) {
+  text = paste0(
+    "gg_temp <-", get_name(df), "%>% 
+    mutate(q05 = quantile(",var, ", 0.05, na.rm=TRUE),
+           q25 = quantile(",var, ", 0.25, na.rm=TRUE),
+           q50 = quantile(",var, ", 0.5, na.rm=TRUE),
+           q75 = quantile(", var, ", 0.75, na.rm=TRUE),
+           q90 = quantile(", var, ", 0.9, na.rm = TRUE),
+           q95 = quantile(", var, ", 0.95, na.rm = TRUE)) %>% 
+    ggplot(aes(", var, ")) +
+    geom_histogram(aes(y=..count../sum(..count..))) +
+    geom_vline(aes(xintercept = c(q05, q25, q50, q75, q90, q95)),
+               size = 0.5, color = 'red') +
+    facet_wrap(~respuesta) +
+  ylab('Number of customers')
+  min = min(unique(gg_temp$data$q05))
+  max = max(unique(gg_temp$data$q95))
+  gg_temp + 
+    xlim(min,  max) +
+    geom_histogram(binwidth = abs(max - min)/30)
+  ")
+  return(eval(parse(text = text)))
+}
+
+vars <- c("num_trans_30",
+          "num_trans_360",
+          "coc_abono_retiro_90",
+          "dias_dif_max_360",
+          "coc_abono_retiro_180",
+          "dias_dif_min_360",
+          "dias_dif_min_30",
+          "min_abono_360",
+          "max_abono_360",
+          "coc_abono_retiro_30",
+          "med_abonos_360",
+          "dias_dif_max_30",
+          "num_retiros_90",
+          "coc_max_abono_180",
+          "num_abonos_180",
+          "dimension_crimen",
+          "max_abono_180",
+          "med_abonos_30",
+          "sum_abono_360",
+          "coc_max_retiro_90")
+
+
+grafs <- lapply(vars, function(x) plot_distribucion_modelo(datos_modelo, x))  
+
+library(gridExtra)
+do.call("grid.arrange", c(grafs, ncol = 2))
+
+```
+
+
 #Crime Rate
 
 Using information about crime reports we create four indexes that together give us a picture of the crime in the region. The indexes that we produce are:
 
-**Crime dimension: this index give us a summarized idea of the total crime in the region.
-** Non violent crime dimension: this index tell us about the number of non violent crimes in the region.
-**Violent crime dimension: this index tell us how about the number of violent crimes in the region.
-**Kidnap dimension: this index tell us about the number of kidnaps in the region.
+* Crime dimension: this index give us a summarized idea of the total crime in the region.
+
+* Non violent crime dimension: this index tell us about the number of non violent crimes in the region.
+
+* Violent crime dimension: this index tell us how about the number of violent crimes in the region.
+
+* Kidnap dimension: this index tell us about the number of kidnaps in the region.
 
 ```{r,fig.height=6,fig.width=7}
 mapa <- function(df,color,title){
