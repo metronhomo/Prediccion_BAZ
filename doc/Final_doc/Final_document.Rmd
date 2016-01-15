@@ -1,0 +1,1074 @@
+---
+title: "Final document"
+author: "Metronhomo"
+date: "January, 2016"
+output: html_document
+---
+  
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE, comment=FALSE, include=FALSE}
+library(rgdal)
+library(readxl)
+library(ggthemes)
+library(geosphere)
+library(foreign)
+library(knitr)
+library(ggplot2)
+library(plyr)
+library(tidyr)
+library(dplyr)
+library(lubridate)
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE, fig.align="center")
+```
+```{r}
+x_axis_vert <- function(ang = 90) theme(axis.text.x = element_text(angle = ang, vjust = 0.5, hjust=1))
+get_name <- function(object) {out<-deparse(substitute(object)); out} 
+```
+
+#Introduction
+
+The goal of this project is to know whether a savings customer will take a credit or not. We have different sources of data, including savings account transactions, ZIP code, ATM geographical and transactional information and open data regarding crime and sociodemographic areas in Mexico.
+
+In this document we present an exploratory data analysis on the available information. There are around 12 million savings customers and 800 thousand credit AND savings customers in Banco Azteca (BAZ), from which we have a sample of 1 million people for savings. The analysis in this document is based on the information of this sample and the whole population of credit customers.
+
+```{r}
+datos <- readRDS("../../output/SFTP/crédito y captación.RDS")
+names(datos) <- gsub(" ", "_", names(datos))
+
+datos$credit_or_savings <- as.integer(is.na(datos$zip_code))
+datos$zip_code2 <- as.character(datos$zip_code)
+idx <- is.na(datos$zip_code)
+datos$zip_code2[idx] <- datos$cred_zip_code[idx]
+datos2 <- datos %>%
+  mutate(#zip_code = gsub('(\\")?([0-9]+)(\\")?', '\\2', zip_code2),
+    zip_code = gsub('\\D', '', zip_code2),
+    gender = gsub("(.*)M(.*)", "M", as.character(gender)),
+    gender = gsub("(.*)F(.*)", "F", gender),
+    credit_or_savings = gsub("1", "credit", credit_or_savings),
+    credit_or_savings = gsub("0", "savings", credit_or_savings),
+    savings_aplication_date = as.Date(savings_aplication_date,"%d/%m/%y"),
+    age_C=cut(age,
+              breaks=c(0,17,25,35,45,55,65,Inf),
+              labels=c(NA,"18-25","26-35","36-45","46-55","56-65",">65"))) %>%
+  select(-zip_code2, -cred_zip_code)
+idx <- datos2$zip_code == "00000"
+datos2$zip_code[idx] <- NA
+
+
+# capta <- datos2 %>% filter(Credito == 0)
+# cred <- datos2 %>% filter(Credito == 1)
+
+rm(datos)
+#rm(datos2)
+
+```
+
+#Variable Analysis
+
+###Transactions and Amount
+
+```{r, message=FALSE, warning=FALSE}
+quintiles<-readRDS("../../output/EDA_markdown_preprocessing/quintiles_retiros_abonos.RDS")
+kable(quintiles)
+```
+
+###Gender
+
+```{r,message=FALSE, fig.align="center"}
+datos2 %>%
+  filter(gender %in% c("M","F")) %>%
+  group_by(credit_or_savings, gender) %>%
+  tally() %>%
+  mutate(p=n/sum(n)) %>%
+  ggplot(aes(x=gender,y=p)) +
+  geom_bar(stat="identity") +
+  facet_wrap(~credit_or_savings)
+```
+
+###Tenure
+
+```{r,message=FALSE,fig.align="center"}
+# temp <- datos2 %>%
+#   select(savings_aplication_date, credit_or_savings) %>%
+#   mutate(dif=as.numeric(difftime("2015-08-31", savings_aplication_date,units = "weeks")/52))
+# 
+# quants <- ddply(temp, 
+#                 "credit_or_savings", 
+#                 summarise, 
+#                 q25 = quantile(dif, 0.25, na.rm=TRUE),
+#                 q50 = quantile(dif, 0.5, na.rm=TRUE),
+#                 q75 = quantile(dif, 0.75, na.rm=TRUE))
+# 
+# ggplot(temp, aes(x=dif)) +
+#   geom_histogram(aes(y=..count../sum(..count..)),binwidth=1/12) +
+#   geom_vline(aes(xintercept = c(q25, q50, q75)), 
+#              data = quants,
+#              size = 1.2,color = 'red') +
+#   facet_wrap(~credit_or_savings) +
+#   ylab("Number of customers") +
+#   xlab("Tenure in years")
+
+
+datos2 %>%
+  select(savings_aplication_date, credit_or_savings) %>%
+  mutate(dif=as.numeric(difftime("2015-08-31", savings_aplication_date,units = "weeks")/52)) %>%
+  group_by(credit_or_savings) %>%
+  mutate(q25 = quantile(dif, 0.25, na.rm=TRUE),
+         q50 = quantile(dif, 0.5, na.rm=TRUE),
+         q75 = quantile(dif, 0.75, na.rm=TRUE)) %>%
+  ggplot(aes(x=dif)) +
+  geom_histogram(aes(y=..count../sum(..count..)),binwidth=1/12) +
+  geom_vline(aes(xintercept = c(q25, q50, q75)),
+             size = 1.2,color = 'red') +
+  facet_wrap(~credit_or_savings) +
+  ylab("Number of customers") +
+  xlab("Tenure in years")
+```
+
+###Salary based on transactions
+
+Number of months / Total months: Value between 0 and 1. If it's 1 it means that the customer made an activity in all of the months that are available in the data; if it's 0 it means that no activity took place. The value of 0 is not possible in this database because these are customers with at least one transaction.
+
+```{r,message=FALSE,fig.align="center"}
+suma_abonos_retiros_por_usuario <- readRDS("../../output/EDA_markdown_preprocessing/suma_abonos_retiros_por_usuario.RDS")
+
+suma_abonos_retiros_por_usuario %>%
+  group_by(credit_or_savings) %>%
+  mutate(q25 = quantile(freq, 0.25, na.rm=TRUE),
+         q50 = quantile(freq, 0.5, na.rm=TRUE),
+         q75 = quantile(freq, 0.75, na.rm=TRUE)) %>%
+  ggplot() + 
+  geom_histogram(aes(freq), binwidth = 0.03) +
+  geom_vline(aes(xintercept = c(q25, q50, q75)),
+             size = 1.2,color = 'red') +
+  facet_wrap(~credit_or_savings) +
+  xlab("Number of months / Total months")
+
+# Número de meses / Total de meses
+# Entre 0 y 1, donde: 
+# 1 significa que hizo alguna actividad en todos los meses en los que tiene registrado
+# 0 sigifica que no hizo ninguna actividad en todos los meses que tiene registrado (nunca va a ser cero aquí)
+
+```
+
+```{r, fig.align="center"}
+datos2 %>% 
+  group_by(credit_or_savings, electronic_banking) %>% 
+  tally() %>% 
+  mutate(proportion = n/sum(n)) %>%
+  select(-n) %>%
+  filter(!is.na(electronic_banking)) %>%
+  kable()
+
+datos2 %>% 
+  group_by(credit_or_savings, active_electronic_banking) %>% 
+  tally() %>% 
+  mutate(proportion = n/sum(n)) %>%
+  select(-n) %>%
+  filter(!is.na(active_electronic_banking)) %>%
+  kable()
+
+datos2 %>% 
+  group_by(credit_or_savings, electronic_banking) %>% 
+  tally() %>% 
+  mutate(proportion = n/sum(n)) %>%
+  select(-n) %>%
+  filter(!is.na(electronic_banking)) %>%
+  ggplot() +
+  geom_bar(aes(x = electronic_banking, y = proportion), stat = 'identity') +
+  facet_wrap(~credit_or_savings)
+
+datos2 %>% 
+  group_by(credit_or_savings, active_electronic_banking) %>% 
+  tally() %>% 
+  mutate(proportion = n/sum(n)) %>%
+  select(-n) %>%
+  filter(!is.na(active_electronic_banking)) %>%
+  ggplot() +
+  geom_bar(aes(x = active_electronic_banking, y = proportion), stat = 'identity') +
+  facet_wrap(~credit_or_savings)
+```
+
+###Months with more activity
+
+```{r,message=FALSE,fig.align="center"}
+resumen_global_mensual_abonos_retiros <-
+  readRDS("../../output/EDA_markdown_preprocessing/resumen_global_mensual_abonos_retiros.RDS") 
+
+resumen_global_mensual_abonos_retiros %>%
+  group_by(MES_OPERA) %>% summarise(retiros_prom = sum(retiros_monto)/sum(retiros), abonos_prom = sum(abonos_monto)/sum(abonos)) %>%
+  ggplot(aes(x=MES_OPERA)) +
+  geom_line(aes(y=-retiros_prom,colour="Withdrawal",group=1),stat="identity") +
+  geom_line(aes(y=abonos_prom,colour="Deposit",group=2),stat="identity") +
+  scale_color_manual(values = c("blue", "red")) +
+  theme(legend.title=element_blank()) +
+  xlab("Month") +
+  ylab("Average Amount")
+
+resumen_global_mensual_abonos_retiros %>% 
+  gather(key, value, abonos_prom, retiros_prom) %>%
+  ggplot(aes(x=MES_OPERA)) +
+  geom_line(aes(y=abs(value), colour = key, group=key), stat="identity") +
+  scale_color_manual(values = c("blue", "red")) +
+  facet_wrap(~credit_or_savings) +
+  theme(legend.title=element_blank()) +
+  xlab("Month") +
+  ylab("Average Amount")
+```
+
+```{r}
+rm(suma_abonos_retiros_por_usuario)
+```
+
+#Histogram of date of first usage of credit
+
+```{r}
+prim_surt <- readRDS("../../output/Varios/catalogo_primer_surtimiento.RDS")
+
+prim_surt %>% 
+  filter(FECHA_PRIM_SURT >= "2014-01-01") %>% 
+  ggplot() + 
+  geom_histogram(aes(FECHA_PRIM_SURT),
+                 binwidth = 7) + 
+  scale_x_date(breaks = "1 month") +
+  x_axis_vert() +
+  xlab("Date of first credit") +
+  ylab("Number of customers")
+```
+
+It can be seen that the number of people taking credits has been decreasing.
+
+#Geography
+
+We have information about the customers' ZIP code. This information could be used, with public available information from sources like INEGI, to know the socioeconomic level of each savings customer.
+
+Available sources:
+
+* Socioeconomic regions by AGEB (INEGI)
+* National Home Income and Expenditure Survey, ENIGH (INEGI)
+* Margination index by locality (CONAPO)
+* Social gap by AGEB (CONEVAL)
+
+AGEB stands for Área GeoEstadística Básica (Basic Geostatistical Area), and a locality is a general term used by CONAPO to define several AGEBs.
+
+This document uses information from the [socioeconomic regions defined by INEGI](http://sc.inegi.gob.mx/niveles/index.jsp?me=ag&ly=99&la=00&at=&ne=ag&nt=95 "AGEB classification") and [margination index by locality defined by CONAPO](http://www.conapo.gob.mx/es/CONAPO/Indice_de_Marginacion_por_Localidad_2010 "locality classification").
+
+ZIP code geographical information is available. According to the [official postal code webpage](http://www.sepomex.gob.mx/lservicios/servicios/descarga.aspx "Download zip codes"), there are 32,448 different ZIP codes in Mexico, from which around 25,000 are available as shape files. The official ZIP code shapefiles are available in [the open data government webpage](http://busca.datos.gob.mx/#/conjuntos/ubicacion-de-codigos-postales-en-mexico "Official shapefiles"), but not all them are available yet, the mexican postal service is still working in finding the delimiters of each code. Other resources are available, for example, a [non-official collection of shapefiles of neighborhoods and ZIP codes](http://www.numeroslocos.com/shapefiles/Colonias.zip "Non official shapefiles"). In addition, [Google's API for geocoding](https://developers.google.com/maps/documentation/geocoding/intro "Google's geocoding API") is a useful tool which is used as a last resort to find information about some ZIP codes.
+
+Even with all this available information, there's still a problem, which is that there are a bunch of ZIP codes which aren't officially assigned to any human settlement but that are being used by people due to tradition or misinformation. So, geographic information may not be available for all customers, but it will be for most of them.
+
+###Problem: 
+The polygons defining the ZIP codes aren't equivalent to the polygons defining the AGEBs and localities, so a mapping between them is needed to be able to use the public available information. Perhaps the simplest solution is to find the centroid of each ZIP code and AGEB or locality, and then just map a given ZIP code to the closest AGEB or locality centroid.
+
+####AGEB classification:
+
+We have a classification for each AGEB that pretends to show the differences among AGEBs based on indicators related with housing, education, health and employment, built from the last population census. Each AGEB can be classified in 7 strata such that stratum 7 contains AGEBs with the most favorable average conditions, and in stratum 1 are the AGEBs with the least favorable average conditions.
+
+In the next images, maps of Mexico City and surroundings, Monterrey and Guadalajara are shown.
+
+```{r, echo=FALSE, results='hide', include = FALSE, cache=TRUE}
+composicion <- read.dbf("../../data/Geo/Regiones socioeconómicas de México INEGI/Composición de los estratos/COMAGB.dbf")
+agebs_map <- readRDS(file = "../../output/Geo/agebs_map.RDS")
+Centroides_AGEBS <- readRDS(file = "../../output/Geo/Centroides_AGEBS.RDS")
+estados_map <- readOGR("../../data/Geo/Entidades_2010_5A/", layer = "Entidades_2010_5A") %>%
+spTransform(CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+estados_map <- fortify(estados_map, region = "NOM_ENT")
+CP_map <- readRDS(file = "../../output/Geo/dataframe_mapas_CP_datos_gob.RDS") %>% 
+mutate(group2 = paste0(group, Estado))
+Centroides_CP <- readRDS(file = "../../output/Geo/Centroides_CP.RDS")
+municipios_map_f <- readRDS(file = "../../output/EDA_markdown_preprocessing/municipios_map_f.RDS")
+```
+```{r, echo=FALSE, results='hide', include = FALSE, cache=TRUE}
+composicion_DF <- composicion %>%
+filter(ENT == "09" | ENT == "15") %>%
+mutate(id = paste0(ENT, MUN, LOC, AGEB))
+
+agebs_map_DF <- agebs_map %>%
+mutate(sub_id = substr(id, 1, 2)) %>%
+filter(sub_id == "09" | sub_id == "15") %>%
+select(-sub_id) %>%
+left_join(composicion_DF[,c("id", "E_AGEB", "POB")])
+```
+
+Map of Mexico City with centroids of each polygon:
+
+```{r, echo=FALSE, fig.height = 8, fig.width=8, fig.align="center"}
+# Mapa con AGEBS con el color dependiendo del tipo de región socioeconómica según INEGI
+
+ggplot() + 
+geom_polygon(data = filter(municipios_map_f, CVE_ENT == "09" | CVE_ENT == "15"), 
+aes(long, lat, group=group), 
+colour = 'grey', 
+fill = 'white') +
+geom_polygon(data = filter(estados_map, id == "Distrito Federal"), 
+aes(long, lat, group=group), 
+colour = 'black', 
+fill = 'white') +
+geom_polygon(data = agebs_map_DF, aes(long, lat, group=group, fill = factor(E_AGEB)), 
+colour = 'grey30', size = 0.2) +
+scale_fill_discrete(name="Classification", na.value = "grey90") +
+geom_point(data = Centroides_AGEBS, aes(x = long, y = lat), size = 0.7) +
+coord_map(projection="mercator", ylim = c(19, 19.75), xlim = c(-99.4, -98.8)) +
+theme_map() +
+ggtitle("AGEB classification in Mexico City and its surroundings with polygon centroids")
+
+```
+
+
+Now, same map for Guadalajara, Jalisco:
+
+```{r, echo=FALSE, results='hide', include = FALSE, cache=TRUE, fig.align="center"}
+composicion_Jal <- composicion %>%
+filter(ENT == "14") %>%
+mutate(id = paste0(ENT, MUN, LOC, AGEB))
+
+agebs_map_Jal <- agebs_map %>%
+mutate(sub_id = substr(id, 1, 2)) %>%
+filter(sub_id == "14") %>%
+select(-sub_id) %>%
+left_join(composicion_Jal[,c("id", "E_AGEB", "POB")])
+```
+```{r, echo=FALSE, fig.height = 8, fig.width=8}
+ggplot() + 
+geom_polygon(data = filter(municipios_map_f, CVE_ENT == "14"), 
+aes(long, lat, group=group), 
+colour = 'grey', 
+fill = 'white') +
+#   geom_polygon(data = filter(estados_map, id == "Distrito Federal"), 
+#                aes(long, lat, group=group), 
+#                colour = 'black', 
+#                fill = 'white') +
+geom_polygon(data = agebs_map_Jal, aes(long, lat, group=group, fill = factor(E_AGEB)), 
+colour = 'grey30', size = 0.2) +
+scale_fill_discrete(name="Classification", na.value = "grey90") +
+geom_point(data = Centroides_AGEBS, aes(x = long, y = lat), size = 0.7) +
+coord_map(projection="mercator",
+xlim = c(-103.57, -103.18),
+ylim = c(20.4, 20.81)) +
+theme_map() +
+ggtitle("AGEB classification in Guadalajara and its surroundings with polygon centroids")
+
+```
+
+And finally, for Monterrey, Nuevo León:
+
+```{r, echo=FALSE, results='hide', include = FALSE, cache=TRUE, fig.align="center"}
+composicion_NL <- composicion %>%
+filter(ENT == "19") %>%
+mutate(id = paste0(ENT, MUN, LOC, AGEB))
+
+agebs_map_NL <- agebs_map %>%
+mutate(sub_id = substr(id, 1, 2)) %>%
+filter(sub_id == "19") %>%
+select(-sub_id) %>%
+left_join(composicion_NL[,c("id", "E_AGEB", "POB")])
+```
+```{r, echo=FALSE, fig.height = 8, fig.width=8}
+ggplot() + 
+geom_polygon(data = filter(municipios_map_f, CVE_ENT == "19"), 
+aes(long, lat, group=group), 
+colour = 'grey', 
+fill = 'white') +
+geom_polygon(data = agebs_map_NL, aes(long, lat, group=group, fill = factor(E_AGEB)), 
+colour = 'grey30', size = 0.2) +
+scale_fill_discrete(name="Classification", na.value = "grey90") +
+geom_point(data = Centroides_AGEBS, aes(x = long, y = lat), size = 0.7) +
+coord_map(projection="mercator", ylim = c(25.25, 26), xlim = c(-100, -100.7)) +
+theme_map() +
+ggtitle("AGEB classification in Monterrey and its surroundings with polygon centroids")
+```
+
+ZIP code information with their centroids can be seen in the next map of Mexico City:
+
+```{r, echo = FALSE, fig.height=7, fig.align="center"}
+ggplot() + 
+geom_polygon(data = filter(municipios_map_f, CVE_ENT == "09" | CVE_ENT == "15"), 
+aes(long, lat, group=group), 
+colour = 'grey', 
+fill = 'white') +
+geom_polygon(data = filter(estados_map, id == "Distrito Federal"), 
+aes(long, lat, group=group), 
+colour = 'black', 
+fill = 'white') +
+geom_polygon(data = filter(CP_map, Estado == "DF" | Estado == "Mex"), 
+aes(long, lat, group=group2), 
+colour = 'blue', 
+fill = "light blue", 
+alpha = 0.9, 
+size = 0.2) +
+geom_point(data = Centroides_CP, aes(x = long, y = lat, color = fuente), size = 1.2) +
+scale_colour_brewer(name = "source", palette="Set1") +
+guides(colour = guide_legend(override.aes = list(size=3))) + #Para que los puntos en la guía sean más grandes
+coord_map(projection="mercator", 
+ylim = c(19, 19.75), 
+xlim = c(-99.4, -98.8)) +
+theme_map() +
+ggtitle("ZIP codes of Mexico City and its surroundings") 
+```
+
+ZIP code information with their centroids can be seen in the next map of Guadalajara. Some of the centroids may not match perfectly the polygon plotted because the database considers a the ZIP code and the identifier as a different group.
+
+```{r, echo = FALSE, fig.height=7, fig.align="center"}
+ggplot() + 
+geom_polygon(data = filter(municipios_map_f, CVE_ENT == "14"), 
+aes(long, lat, group=group), 
+colour = 'grey', 
+fill = 'white') +
+geom_polygon(data = filter(CP_map, Estado == "Jal"), 
+aes(long, lat, group=group2), 
+colour = 'blue', 
+fill = "light blue", 
+alpha = 0.9, 
+size = 0.2) +
+geom_point(data = Centroides_CP, aes(x = long, y = lat, color = fuente), size = 1.2) +
+scale_colour_brewer(name = "source", palette="Set1") +
+guides(colour = guide_legend(override.aes = list(size=3))) +
+coord_map(projection="mercator",
+xlim = c(-103.57, -103.18),
+ylim = c(20.4, 20.81)) +
+theme_map() +
+ggtitle("ZIP codes of Guadalajara and its surroundings") 
+```
+
+ZIP code information with their centroids can be seen in the next map of Monterrey:
+
+```{r, echo = FALSE, fig.height=7, fig.align="center"}
+ggplot() + 
+geom_polygon(data = filter(municipios_map_f, CVE_ENT == "19"), 
+aes(long, lat, group=group), 
+colour = 'grey', 
+fill = 'white') +
+geom_polygon(data = filter(CP_map, Estado == "NL"), 
+aes(long, lat, group=group), 
+colour = 'blue', 
+fill = "light blue", 
+alpha = 0.9, 
+size = 0.2) +
+geom_point(data = Centroides_CP, aes(x = long, y = lat, color = fuente), size = 1.2) +
+scale_colour_brewer(name = "source", palette="Set1") +
+guides(colour = guide_legend(override.aes = list(size=3))) +
+coord_map(projection="mercator",
+ylim = c(25.25, 26),
+xlim = c(-100, -100.7)) +
+theme_map() +
+ggtitle("ZIP codes of Monterrey and its surroundings")
+```
+
+Finally, plotting the centroids of AGEBs and ZIP codes in Mexico City altogether we get:
+
+```{r, echo=FALSE, fig.height=7, fig.align="center"}
+ggplot() + 
+geom_polygon(data = filter(municipios_map_f, CVE_ENT == "09" | CVE_ENT == "15"), 
+aes(long, lat, group=group), 
+colour = 'grey', 
+fill = 'white') +
+geom_polygon(data = filter(estados_map, id == "Distrito Federal"), 
+aes(long, lat, group=group), colour = 'black', fill = 'white') +
+geom_point(data = Centroides_AGEBS, aes(x = long, y = lat), colour = 'red', size = 1.2) +
+geom_point(data = Centroides_CP, aes(x = long, y = lat), colour = 'blue', size = 1.2) +
+coord_map(projection="mercator", 
+ylim = c(19, 19.75), 
+xlim = c(-99.4, -98.8)) +
+theme_map() +
+ggtitle("Centroids of AGEBs (red) y Zip codes (blue) in Mexico City")
+
+```
+
+Guadalajara:
+
+```{r, echo=FALSE, fig.height=7, fig.align="center"}
+ggplot() + 
+geom_polygon(data = filter(municipios_map_f, CVE_ENT == "14"), 
+aes(long, lat, group=group), 
+colour = 'grey', 
+fill = 'white') +
+geom_point(data = Centroides_AGEBS, aes(x = long, y = lat), colour = 'red', size = 1.2) +
+geom_point(data = Centroides_CP, aes(x = long, y = lat), colour = 'blue', size = 1.2) +
+coord_map(projection="mercator",
+xlim = c(-103.57, -103.18),
+ylim = c(20.4, 20.81)) +
+theme_map() +
+ggtitle("Centroids of AGEBs (red) y Zip codes (blue) in Guadalajara")
+
+```
+
+Monterrey:
+
+```{r, echo=FALSE, fig.height=7, fig.align="center"}
+ggplot() + 
+geom_polygon(data = filter(municipios_map_f, CVE_ENT == "19"), 
+aes(long, lat, group=group), 
+colour = 'grey', 
+fill = 'white') +
+geom_point(data = Centroides_AGEBS, aes(x = long, y = lat), colour = 'red', size = 1.2) +
+geom_point(data = Centroides_CP, aes(x = long, y = lat), colour = 'blue', size = 1.2) +
+coord_map(projection="mercator",
+ylim = c(25.25, 26),
+xlim = c(-100, -100.7)) +
+theme_map() +
+ggtitle("Centroids of AGEBs (red) y Zip codes (blue) in Monterrey")
+
+```
+
+So, for each available ZIP code, the closest AGEB centroid is found and a mapping is made to assign an AGEB to each ZIP code, such that we get a table in the following format:
+
+```{r, echo = FALSE}
+mapeo_AGEB <- read.csv("../../output/Geo/mapeo_CP_AGEB_con_info_socioeconomica.csv", nrow = 10) %>%
+select(-id, -distance, -TIPO)
+names(mapeo_AGEB) <- c("ZIP", "ZIP long", "ZIP lat", "Nearest AGEB", "AGEB long", "AGEB lat", "Distance in Km", "Classification")
+kable(mapeo_AGEB)
+```
+
+In the following graph, a histogram is plotted showing the distribution of the distance between the centroid of the ZIP code and the centroid of the AGEB. The red lines represent quantiles 0.5, 0.75, 0.9 and 0.95. As can be seen, most of the mass is concentrated in distances shorter than 10 Km. This may seem like little, but in the case of a city, the landscape can change dramatically in 10 Km.
+
+```{r}
+CPs <- read.csv('../../data/Geo/CPdescarga.txt', sep = '|')
+mapeo_AGEB <- read.csv("../../output/Geo/mapeo_CP_AGEB_con_info_socioeconomica.csv") %>%
+select(-id, -distance)
+```
+
+
+```{r}
+gg_temp <- 
+mapeo_AGEB %>%
+mutate(q50 = quantile(distance_km, 0.5, na.rm=TRUE),
+q75 = quantile(distance_km, 0.75, na.rm=TRUE),
+q90 = quantile(distance_km, 0.9, na.rm = TRUE),
+q95 = quantile(distance_km, 0.95, na.rm = TRUE)) %>%
+ggplot(aes(x=distance_km)) +
+geom_histogram(aes(y=..count../sum(..count..)), binwidth=1/5) +
+geom_vline(aes(xintercept = c(q50, q75, q90, q95)),
+size = 0.5, color = 'red') +
+ylab("Number of ZIP codes") +
+xlab("Distance in km's") +
+ggtitle('Distance distribution from centroid to centroid')
+gg_temp + xlim(0, max(unique(gg_temp$data$q95)) + max(unique(gg_temp$data$q95))/10)
+rm(gg_temp)
+
+```
+
+In the following graph, the distance histogram is plotted once more, but with with a different graph depending on whether the ZIP code is in a rural, urban, semiurban or unknown type of area. In the urban and semiurban areas, more than 95\% of ZIP codes are within a 2.5 Km distance from the closest centroid. The rural areas are the ones that have a shorter tail, which seems reasonable because rural areas are usually larger and AGEB information is scarse in these areas.
+
+```{r}
+gg_temp <- 
+mapeo_AGEB %>% 
+mutate(d_codigo = CP) %>% 
+left_join(select(CPs, d_codigo, d_estado, d_ciudad, d_zona)) %>% 
+select(d_zona, distance_km) %>% 
+group_by(d_zona) %>% 
+mutate(q50 = quantile(distance_km, 0.5, na.rm=TRUE),
+q75 = quantile(distance_km, 0.75, na.rm=TRUE),
+q90 = quantile(distance_km, 0.9, na.rm = TRUE),
+q95 = quantile(distance_km, 0.95, na.rm = TRUE)) %>%
+ggplot(aes(x=distance_km)) +
+geom_histogram(aes(y=..count..), binwidth = 1/10) +
+geom_vline(aes(xintercept = c(q50, q75, q90, q95)),
+size = 0.5, color = 'red') +
+facet_wrap(~d_zona, scales = 'free_y')+
+ylab("Number of ZIP codes") +
+xlab("Distance in km's") +
+ggtitle('Distance distribution from centroid to centroid depending on type of area')
+gg_temp + xlim(0, max(unique(gg_temp$data$q95)) + max(unique(gg_temp$data$q95))/10)
+rm(gg_temp)
+```
+
+The following graph shows the distribution of the distance of the 4 main states in Mexico.
+
+```{r}
+gg_temp <- 
+mapeo_AGEB %>% 
+mutate(d_codigo = CP) %>% 
+left_join(select(CPs, d_codigo, d_estado, d_ciudad, d_zona)) %>% 
+select(d_estado, distance_km) %>% 
+filter(d_estado == 'Distrito Federal' |
+d_estado == 'México' |
+d_estado == 'Jalisco' |
+d_estado == 'Nuevo León') %>% 
+group_by(d_estado) %>% 
+mutate(q50 = quantile(distance_km, 0.5, na.rm=TRUE),
+q75 = quantile(distance_km, 0.75, na.rm=TRUE),
+q90 = quantile(distance_km, 0.9, na.rm = TRUE),
+q95 = quantile(distance_km, 0.95, na.rm = TRUE)) %>%
+ggplot(aes(x=distance_km)) +
+geom_histogram(aes(y=..count..), binwidth = 1/10) +
+geom_vline(aes(xintercept = c(q50, q75, q90, q95)),
+size = 0.5, color = 'red') +
+facet_wrap(~d_estado, scales = 'free_y')+
+ylab("Number of ZIP codes") +
+xlab("Distance in km's") +
+ggtitle('Distance distribution from centroid to centroid depending on state')
+gg_temp + xlim(0, max(unique(gg_temp$data$q95)) + max(unique(gg_temp$data$q95))/10)
+rm(gg_temp)
+
+```
+
+The next graph combines the data of the last two graphs: it shows the distance distribution depending on whether the area is rural, urban, semiurban or unknown and on whether the ZIP code is in any of the 4 biggest states in Mexico. Once more, in the urban and semiurban areas the distance is smaller than in rural areas.
+
+```{r}
+gg_temp <- 
+mapeo_AGEB %>% 
+mutate(d_codigo = CP) %>% 
+left_join(select(CPs, d_codigo, d_estado, d_ciudad, d_zona)) %>% 
+select(d_estado, distance_km, d_zona) %>% 
+filter(d_estado == 'Distrito Federal' |
+d_estado == 'México' |
+d_estado == 'Jalisco' |
+d_estado == 'Nuevo León') %>% 
+group_by(d_estado, d_zona) %>% 
+mutate(q50 = quantile(distance_km, 0.5, na.rm=TRUE),
+q75 = quantile(distance_km, 0.75, na.rm=TRUE),
+q90 = quantile(distance_km, 0.9, na.rm = TRUE),
+q95 = quantile(distance_km, 0.95, na.rm = TRUE)) %>%
+ggplot(aes(x=distance_km)) +
+geom_histogram(aes(y=..count..), binwidth = 1/7) +
+geom_vline(aes(xintercept = c(q50, q75, q90, q95)),
+size = 0.5, color = 'red') +
+facet_grid(d_estado~d_zona, scales = 'free_y')+
+ylab("Number of ZIP codes") +
+xlab("Distance in km's") +
+ggtitle('Distance distribution from centroid to centroid\ndepending on state and type of area')
+gg_temp + xlim(0, max(unique(gg_temp$data$q95)) + max(unique(gg_temp$data$q95))/20)
+rm(gg_temp)
+```
+
+This approach may fail in the rural areas and also, as can be noted, ZIP code polygons are generally bigger in area than AGEBs, so the heterogeneity of each ZIP code is being ignored. 
+
+```{r}
+#rm(mapeo_AGEB)
+```
+
+
+####Locality classification:
+
+CONAPO (Comisión Nacional de Población, Population National Commission) makes a margination index by locality, defining margination as the set of social problems or disadvantages of a community or locality. The index pretends to summarize characteristics of the environment in which people live in using information of:
+
+* Percentage of population 15 years old or more who cannot read or write
+* Percentage of population 15 years old or more who don't have a completed promary education
+* Percentage of households without a W.C.
+* Percentage of households without electricity
+* Percentage of households without tap water
+* Average number of people living in a a room
+* Percentage of households with dirt floor
+* Percentage of households without a refrigerator
+
+The index is computed using Principal Coponent Analysis, the index is the the first component, which is best explained by the absence of refrigerator and percentage of people without primary education and percentage of people who can't read or write. This index is the classified in five categories of margination: very low, low, medium, high and very high.
+
+In the next images, maps of Mexico City and surroundings, Monterrey and Guadalajara are shown.
+
+```{r, echo=FALSE, results='hide', include = FALSE, cache=TRUE}
+marginacion <- read.csv("../../data/Geo/Índice de marginación CONAPO/basecompleta.csv") %>% 
+select(ENT, MUN, LOC, GM_2010, IM_2010) %>% 
+mutate(id = paste0(
+sprintf("%02d", ENT),
+sprintf("%03d", MUN),
+sprintf("%04d", LOC)
+)) %>% 
+select(-ENT, -MUN, -LOC)
+loc_map <- readRDS("../../output/Geo/localidades_urbanas_map_dataframe.RDS")
+Centroides_loc <- readRDS(file = "../../output/Geo/Centroides_localidades_urbanas.RDS")
+estados_map <- readOGR("../../data/Geo/Entidades_2010_5A/", layer = "Entidades_2010_5A") %>%
+spTransform(CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+estados_map <- fortify(estados_map, region = "NOM_ENT")
+CP_map <- readRDS(file = "../../output/Geo/dataframe_mapas_CP_datos_gob.RDS") %>% 
+mutate(group2 = paste0(group, Estado))
+Centroides_CP <- readRDS(file = "../../output/Geo/Centroides_CP.RDS")
+municipios_map_f <- readRDS(file = "../../output/EDA_markdown_preprocessing/municipios_map_f.RDS")
+```
+```{r, echo=FALSE, results='hide', include = FALSE, cache=TRUE}
+marginacion_DF <- marginacion %>%
+filter(substr(id, 1, 2) == "09" | substr(id, 1, 2) == "15")
+
+loc_map_DF <- loc_map %>%
+mutate(sub_id = substr(id, 1, 2)) %>%
+filter(sub_id == "09" | sub_id == "15") %>%
+select(-sub_id) %>%
+left_join(marginacion_DF)
+```
+
+Map of Mexico City with centroids of each polygon:
+
+```{r, echo=FALSE, fig.height = 8, fig.width=8, fig.align="center"}
+# Mapa con localidades con el color dependiendo del tipo de clasificación de CONAPO
+
+ggplot() + 
+geom_polygon(data = filter(municipios_map_f, CVE_ENT == "09" | CVE_ENT == "15"), 
+aes(long, lat, group=group), 
+colour = 'grey', 
+fill = 'white') +
+geom_polygon(data = filter(estados_map, id == "Distrito Federal"), 
+aes(long, lat, group=group), 
+colour = 'black', 
+fill = 'white') +
+geom_polygon(data = loc_map_DF, aes(long, lat, group=group, fill = GM_2010), 
+colour = 'grey30', size = 0.2) +
+scale_fill_discrete(name="Classification", na.value = "grey90") +
+geom_point(data = Centroides_loc, aes(x = long, y = lat), size = 0.7) +
+coord_map(projection="mercator", ylim = c(19, 19.75), xlim = c(-99.4, -98.8)) +
+theme_map() +
+ggtitle("Locality classification in Mexico City and its surroundings with polygon centroids")
+
+```
+
+
+Now, same map for Guadalajara, Jalisco:
+
+```{r, echo=FALSE, results='hide', include = FALSE, cache=TRUE, fig.align="center"}
+marginacion_Jal <- marginacion %>%
+filter(substr(id, 1, 2) == "14")
+
+loc_map_Jal <- loc_map %>%
+mutate(sub_id = substr(id, 1, 2)) %>%
+filter(sub_id == "14") %>%
+select(-sub_id) %>%
+left_join(marginacion_Jal)
+```
+```{r, echo=FALSE, fig.height = 8, fig.width=8}
+ggplot() + 
+geom_polygon(data = filter(municipios_map_f, CVE_ENT == "14"), 
+aes(long, lat, group=group), 
+colour = 'grey', 
+fill = 'white') +
+#   geom_polygon(data = filter(estados_map, id == "Distrito Federal"), 
+#                aes(long, lat, group=group), 
+#                colour = 'black', 
+#                fill = 'white') +
+geom_polygon(data = loc_map_Jal, aes(long, lat, group=group, fill = GM_2010), 
+colour = 'grey30', size = 0.2) +
+scale_fill_discrete(name="Classification", na.value = "grey90") +
+geom_point(data = Centroides_loc, aes(x = long, y = lat), size = 0.7) +
+coord_map(projection="mercator",
+xlim = c(-103.57, -103.18),
+ylim = c(20.4, 20.81)) +
+theme_map() +
+ggtitle("Locality classification in Guadalajara and its surroundings with polygon centroids")
+
+```
+
+And finally, for Monterrey, Nuevo León:
+
+```{r, echo=FALSE, results='hide', include = FALSE, cache=TRUE, fig.align="center"}
+marginacion_NL <- marginacion %>%
+filter(substr(id, 1, 2) == "19")
+
+loc_map_NL <- loc_map %>%
+mutate(sub_id = substr(id, 1, 2)) %>%
+filter(sub_id == "19") %>%
+select(-sub_id) %>%
+left_join(marginacion_NL)
+```
+```{r, echo=FALSE, fig.height = 8, fig.width=8}
+ggplot() + 
+geom_polygon(data = filter(municipios_map_f, CVE_ENT == "19"), 
+aes(long, lat, group=group), 
+colour = 'grey', 
+fill = 'white') +
+#   geom_polygon(data = filter(estados_map, id == "Distrito Federal"), 
+#                aes(long, lat, group=group), 
+#                colour = 'black', 
+#                fill = 'white') +
+geom_polygon(data = loc_map_NL, aes(long, lat, group=group, fill = GM_2010), 
+colour = 'grey30', size = 0.2) +
+scale_fill_discrete(name="Classification", na.value = "grey90") +
+geom_point(data = Centroides_loc, aes(x = long, y = lat), size = 0.7) +
+coord_map(projection="mercator", ylim = c(25.25, 26), xlim = c(-100, -100.7)) +
+theme_map() +
+ggtitle("Locality classification in Monterrey and its surroundings with polygon centroids")
+```
+
+It can be seen in the previous maps that the localities in the main cities in Mexico are much bigger than the AGEBs and the ZIP codes, so the information provided by CONAPO may not give a good estimate of the level of each ZIP code because localities are more homogeneous.
+
+##Customer analysis
+
+First, let's see what's the distribution of the classification of AGEBs in the country. Remember that 7 is that the AGEB is "good" in average and that 1 is that it's "bad".
+
+```{r, echo=FALSE}
+as.data.frame(prop.table(table(composicion$E_AGEB))) %>% 
+  ggplot() + 
+  geom_bar(aes(x = Var1, y = Freq), stat = 'identity') +
+  ylab("Percentage of AGEBs") +
+  xlab("Classification of AGEB")
+```
+
+And now, the mapping of the ZIP codes:
+  
+  ```{r, echo=FALSE}
+as.data.frame(prop.table(table(mapeo_AGEB$E_AGEB))) %>% 
+  ggplot() + 
+  geom_bar(aes(x = Var1, y = Freq), stat = 'identity') +
+  ylab("Percentage of ZIP codes") +
+  xlab("Classification of ZIP code according to our mapping")
+```
+
+The distribution changed considerably. As we can see in the following graph, originally the AGEBs were urban (U) and rural (R), but the mapping consists of only urban ZIP codes; so this may be a reason of why the distribution changed so much.
+
+```{r, echo=FALSE}
+temp <- rbind(as.data.frame(prop.table(table(composicion$TIPO))),
+              as.data.frame(prop.table(table(mapeo_AGEB$TIPO))))
+temp$type = c("AGEB", "AGEB", "ZIP code")
+ggplot(temp) + 
+  geom_bar(aes(x = Var1, y = Freq), stat = 'identity') +
+  facet_wrap(~type) +
+  xlab("Area (Rural or Urban)") +
+  ylab("Percentage")
+
+```
+
+And now let's analyze the sample with 1 million savings customers and circa 800 thousand credit customers.
+
+```{r, cache=TRUE, echo=FALSE}
+
+datos3 <- datos2 %>%
+mutate(CP = as.integer(zip_code)) %>%
+left_join(mapeo_AGEB[,c("CP", "E_AGEB")]) %>%
+select(-CP)
+
+rm(datos2)
+```
+
+Out of the `r nrow(datos3)`, we have the mapping ZIP code for `r sum(datos3$zip_code %in% mapeo_AGEB$CP)` of them, which are distributed the following way:
+
+```{r, echo = FALSE}
+as.data.frame(prop.table(table(datos3$E_AGEB))) %>%
+ggplot() + 
+geom_bar(aes(x = Var1, y = Freq), stat = 'identity') +
+ylab("Percentage of customers") +
+xlab("Classification of customer according to our mapping")
+```
+
+And now, conditioning on whether it's a credit or savings customer: 
+  
+  ```{r, echo = FALSE}
+as.data.frame(prop.table(table(datos3$E_AGEB, datos3$credit_or_savings)))  %>%   ggplot() + 
+  geom_bar(aes(x = Var1, y = Freq), stat = 'identity') +
+  facet_wrap(~Var2, scales = 'free_y') +
+  ylab("Percentage of customers") +
+  xlab("Classification of customer according to our mapping")
+```
+
+```{r, echo=FALSE}
+num_clientes_por_cp <- datos3 %>%
+  group_by(zip_code) %>%
+  tally() %>%
+  mutate(CP = as.integer(zip_code)) %>%
+  inner_join(mapeo_AGEB)
+
+ggplot() + 
+  geom_polygon(data = estados_map, 
+               aes(long, lat, group=group), colour = 'black', fill = 'white') +
+  geom_point(data = num_clientes_por_cp, aes(x = CP_long, y = CP_lat, size = n, colour = as.factor(E_AGEB))) +
+  coord_map(projection="mercator") +
+  theme_map() +
+  ggtitle("Location of customers")
+```
+
+
+```{r, fig.height=60, fig.width=10}
+datos_modelo <- readRDS("../../output/Modelos/df_resumen_variables_transaccionales_crimen_pobreza.RDS")
+
+plot_distribucion_modelo <- function(df, var) {
+  text = paste0(
+    "gg_temp <-", get_name(df), "%>% 
+    mutate(q05 = quantile(",var, ", 0.05, na.rm=TRUE),
+    q25 = quantile(",var, ", 0.25, na.rm=TRUE),
+    q50 = quantile(",var, ", 0.5, na.rm=TRUE),
+    q75 = quantile(", var, ", 0.75, na.rm=TRUE),
+    q90 = quantile(", var, ", 0.9, na.rm = TRUE),
+    q95 = quantile(", var, ", 0.95, na.rm = TRUE)) %>% 
+    ggplot(aes(", var, ")) +
+    geom_histogram(aes(y=..count../sum(..count..))) +
+    geom_vline(aes(xintercept = c(q05, q25, q50, q75, q90, q95)),
+    size = 0.5, color = 'red') +
+    facet_wrap(~respuesta) +
+    ylab('Number of customers')
+    min = min(unique(gg_temp$data$q05))
+    max = max(unique(gg_temp$data$q95))
+    gg_temp + 
+    xlim(min,  max) +
+    geom_histogram(binwidth = abs(max - min)/30)
+    ")
+  return(eval(parse(text = text)))
+}
+
+vars <- c("num_trans_30",
+          "num_trans_360",
+          "coc_abono_retiro_90",
+          "dias_dif_max_360",
+          "coc_abono_retiro_180",
+          "dias_dif_min_360",
+          "dias_dif_min_30",
+          "min_abono_360",
+          "max_abono_360",
+          "coc_abono_retiro_30",
+          "med_abonos_360",
+          "dias_dif_max_30",
+          "num_retiros_90",
+          "coc_max_abono_180",
+          "num_abonos_180",
+          "dimension_crimen",
+          "max_abono_180",
+          "med_abonos_30",
+          "sum_abono_360",
+          "coc_max_retiro_90")
+
+
+grafs <- lapply(vars, function(x) plot_distribucion_modelo(datos_modelo, x))  
+
+library(gridExtra)
+do.call("grid.arrange", c(grafs, ncol = 2))
+
+```
+
+
+#Crime Rate
+
+Using information about crime reports we create four indexes that together give us a picture of the crime in the region. The indexes that we produce are:
+  
+  * Crime dimension: this index give us a summarized idea of the total crime in the region.
+
+* Non violent crime dimension: this index tell us about the number of non violent crimes in the region.
+
+* Violent crime dimension: this index tell us how about the number of violent crimes in the region.
+
+* Kidnap dimension: this index tell us about the number of kidnaps in the region.
+
+```{r,fig.height=6,fig.width=7}
+mapa <- function(df,color,title){
+  mp <- ggplot() + 
+    geom_polygon(data = df, 
+                 aes_string(x="long", y="lat", group="group", 
+                            fill = color),
+                 colour="gray45",
+                 size = 0.05) +
+    scale_fill_gradient2(name = title,
+                         low="forestgreen",
+                         mid="gold1",
+                         high="firebrick1",
+                         midpoint = .5,
+                         limits=c(0,1)) +
+    theme_map() +
+    coord_equal() +
+    ggtitle(title)
+  return(mp)
+}
+
+municipios_map_f <- readRDS("../../output/EDA_markdown_preprocessing/datos_mapa.RDS")
+
+print(mapa(municipios_map_f,"dimension_crimen","Crime Dimension"))
+print(mapa(municipios_map_f,"dimension_crimen_no_violento","Non violent crime dimension"))
+print(mapa(municipios_map_f,"dimension_crimen_violento","Violent crime dimension"))
+print(mapa(municipios_map_f,"dimension_secuestro","Kidnap dimension"))
+```
+
+
+```{r}
+#Leemos los datos de CP
+cp <- readRDS("../../output/Geo/Detalle_CP.RDS") %>% 
+  select(d_codigo,
+         d_tipo_asenta,
+         D_mnpio,
+         d_estado,
+         d_zona) %>% 
+  as.data.frame() %>% 
+  mutate(d_codigo = as.integer(d_codigo)) %>% 
+  filter(!duplicated(d_codigo)) #Quitamos los repetidos por tipo de asentamiento (asumimos q el primero es el bueno)
+
+mapeo <- read.csv("../../output/Geo/mapeo_CP_AGEB_con_info_socioeconomica.csv") %>%
+  select(-id, -distance) %>% 
+  left_join(cp,by=c("CP"="d_codigo"))
+
+#Pegamos los datos de mapeo a la base de clientes
+datos3 <- datos2 %>%
+  mutate(CP = as.integer(zip_code)) %>%
+  left_join(mapeo[,c("CP", "E_AGEB","d_tipo_asenta","D_mnpio","d_estado","d_zona")]) %>%
+  mutate(d_estado=toupper(d_estado),
+         D_mnpio=toupper(D_mnpio)) %>% 
+  select(-CP)
+
+rm(datos,datos2)
+
+#Quitamos los acentos de las varaibles Estado y municipio
+unwanted_array = list('Á'='A','É'='E','Í'='I','Ó'='O','Ú'='U')
+
+quita_acentos <- function(string){
+  st <- chartr(paste(names(unwanted_array), collapse=''),
+               paste(unwanted_array, collapse=''),
+               string)
+  return(st)
+}
+
+datos3$d_estado <- sapply(as.character(datos3$d_estado),function(s) quita_acentos(s))
+datos3$D_mnpio <- sapply(as.character(datos3$D_mnpio),function(s) quita_acentos(s))
+
+
+#Este df lo hacemos para poder colorear la gráfica de cred/ahorro por nivel del AGEB
+colores <- datos3 %>% 
+  group_by(d_estado,E_AGEB) %>% 
+  tally() %>% 
+  group_by(d_estado) %>% 
+  mutate(total_estado=sum(n,na.rm=T)) %>% 
+  ungroup() %>%
+  mutate(p=n/total_estado) %>% 
+  select(-n,-total_estado) %>% 
+  as.data.frame() %>% 
+  spread(E_AGEB,p) %>% 
+  select_("d_estado",
+          Nivel_1="2",
+          Nivel_2="3",
+          Nivel_3="4",
+          Nivel_4="5",
+          Nivel_5="6",
+          Nivel_6="7",
+          Nivel_7="8") %>% 
+  filter(!is.na(d_estado)) %>% 
+  group_by(d_estado) %>% 
+  mutate(pauperrimo=sum(Nivel_1,Nivel_2,Nivel_3,na.rm=T),
+         medio=sum(Nivel_4,Nivel_5,na.rm=T),
+         alto=sum(Nivel_6,Nivel_7,na.rm=T)) %>% 
+  mutate(bienestar=ifelse(max(sum(Nivel_1,Nivel_2,Nivel_3,Nivel_4,na.rm=T),sum(Nivel_5,Nivel_6,na.rm=T),sum(Nivel_7,na.rm=T))==sum(Nivel_1,Nivel_2,Nivel_3,Nivel_4,na.rm=T),"Bajo",
+                          ifelse(max(sum(Nivel_1,Nivel_2,Nivel_3,Nivel_4,na.rm=T),sum(Nivel_5,Nivel_6,na.rm=T),sum(Nivel_7,na.rm=T))==sum(Nivel_5,Nivel_6,na.rm=T),"Medio",
+                                 "Alto"))) %>% 
+  select(d_estado,bienestar)
+
+#Obtenemos el df de ahorro para hacer la gráfica
+ahorro <- datos3 %>% 
+  group_by(d_estado,credit_or_savings) %>% 
+  tally() %>% 
+  group_by(d_estado) %>% 
+  mutate(total_edo=sum(n)) %>% 
+  filter(complete.cases(d_estado),
+         credit_or_savings=="savings") %>% 
+  arrange(desc(total_edo)) %>% 
+  ungroup() %>% 
+  mutate(d_estado=factor(d_estado,levels=unique(as.character(d_estado))),
+         p=n/total_edo) %>% 
+  filter(d_estado!="GUERRERO")
+#Ajustamos la recta de regresión que va a aparecer en la gráfica
+reg2 <- data.frame(reg=lm(formula = p~log10(total_edo),
+                          data = ahorro[ahorro$d_estado!="GUERRERO",])$fitted.values)
+#Pegamos los colores 
+
+#Pegamos los colores 
+ahorro <- ahorro %>% 
+  bind_cols(reg2) %>% 
+  left_join(colores) 
+#Reordenamos los factores
+ahorro$bienestar <- factor(ahorro$bienestar,levels = c("Alto","Medio","Bajo"))
+
+```
+
+```{r, fig.width=13, fig.height=16}
+#Hacemos una gráfica en la que dibujamos los estados. Una recta de regresión para 
+#saber cuáles están por encima de lo esperado y finalmente pintamos los puntos del estado
+#de acuerdo al nivel de ingreso del ageb en el que está
+ahorro %>% 
+  ggplot() +
+  geom_area(aes(x=log10(total_edo),y=reg),alpha=.3) +
+  geom_point(aes(x=log10(total_edo),y=p,colour=bienestar,fill=bienestar),size=3) +
+  geom_smooth(aes(x=log10(total_edo),y=p),method='lm',formula=y~x,colour="red",fill=NA) +
+  geom_text(aes(x=log10(total_edo),y=p+.01,label=d_estado),size=3.5) +
+  geom_text(x=5.25,y=.7,label="States with a higher than\nexpected savings percentage",colour="red",size=4) +
+  geom_text(x=5.25,y=.45,label="States with a lower than\nexpected savings percentage",colour="red",size=4) +
+  coord_cartesian(ylim=c(.4,.75)) +
+  xlab("Log10 of number of customers") +
+  ylab("Percentage of savings customers")
+```
+
