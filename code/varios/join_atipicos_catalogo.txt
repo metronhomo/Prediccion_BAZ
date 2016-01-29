@@ -1,0 +1,19 @@
+#Unir el archivo con claves de clientes atípicos y el catálogo de claves hasheadas
+
+#Quita las comillas a la columna con la que se quiere unir (esto porque en el catálogo la columna no tiene comillas) y después ordena (porque join necesita que los dos archivos estén ordenados de acuerdo a la columna que se va a unir)
+sort atipicos.csv | sed 's/\"//g' > atipicos_sorted_no_quote.csv
+sort no_atipicos.csv | sed 's/\"//g' > no_atipicos_sorted_no_quote.csv
+
+# Ordena el catálogo de acuerdo a la columna que se va a unir
+sort -t ',' -k5 <(tail -n +2 catalogo_hash_unique.csv) > catalogo_hash_sort.csv
+
+# Hace el join de cada archivo.
+# -t ',' especifica que el separador es una coma
+# -11 especifica que en el archivo 1 se va a unir usando la columna 1
+# -25 especifica que en el archivo 2 se va a unir usando la columna 5
+join -t ',' -11 -25 atipicos_sorted_no_quote.csv catalogo_hash_sort.csv > join_atipicos.csv
+join -t ',' -11 -25 no_atipicos_sorted_no_quote.csv catalogo_hash_sort.csv > join_no_atipicos.csv
+
+# Seleccionar solo las columnas relevantes (3,4 y 5) de cada archivo
+cut -d ',' -f3,4,5,6 join_atipicos.csv > catalogo_atipicos.csv
+cut -d ',' -f3,4,5,6 join_no_atipicos.csv > catalogo_no_atipicos.csv

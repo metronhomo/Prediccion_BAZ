@@ -1,0 +1,24 @@
+---
+title: "Prueba de modelo"
+author: "Metronhomo"
+date: "Enero 2016"
+output: html_document
+---
+
+Para el problema de predecir qué cliente va a tomar un crédito cuando se le ofrezca se calcularon cuatro modelos: Bosques aleatorios, gradient boosting, máquina de soporte vectorial y regresión logística. Los resultados en la muestra de prueba parecían ser muy satisfactorios, sin embargo, se debía probar con nuevos clientes para corroborar los resultados. En este documento se presentan los resultados de esta nueva prueba.
+
+Los modelos originales se entrenaron con 74,384 personas de las cuales 18,746 tenían créditos en los años 2014 y 2015, el resto eran personas de captación. Para la prueba se utiliza la información transaccional de 5,608,900 personas que tienen movimientos en septiembre de 2015. Se revisó que estas personas no estuvieran en el catálogo de clientes de crédito y además se descartaron a los datos atípicos que tenían un gran número de transacciones.
+
+Después de tener una base limpia se calcularon las variables de la misma forma que se hizo para el modelo para hacer la predicción, tomando un año hacia atrás a partir de su última transacción.
+
+Los resultados de los cuatro modelos para los nuevos datos se pueden ver a continuación:
+
+#Random Forest
+
+#SVM
+
+#Gradient Boosting
+
+#Regresión logística
+
+
