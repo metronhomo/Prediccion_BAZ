@@ -1,11 +1,10 @@
-# Requiere la base de datos BAZ.db de 160 GB
-
 library(dplyr)
 library(lubridate)
 library(RSQLite)
 
+#Leemos los catálogos de la base de SQLite
 con = dbConnect(drv = SQLite(), dbname = "BAZ.db")
-catalogo <- dbGetQuery(con, "SELECT 
+catalogo2 <- dbGetQuery(con, "SELECT 
   npais, ncanal, nsucursal, nfolio, hash_map_cu, hash_map_cta, fecha_prim_surt 
   from claves_2014_2015")
 
@@ -14,22 +13,22 @@ catalogo_capta_hash <- dbGetQuery(con, "SELECT
                        from codigos_capta_hash")
 dbDisconnect(con)
 
-catalogo_hash <- catalogo %>% 
+#Este es el catálogo de las personas que tienen crédito, por eso la respuesta es 1
+catalogo_hash <- catalogo2 %>% 
   select(NPAIS, NCANAL, NSUCURSAL, NFOLIO, HASH_MAP_CU) %>% 
   mutate(respuesta=1) %>% 
   unique()
-
-
+#Este es el catálogo de las personas que solo tienen capta por eso la respueste es cro
 catalogo_capta_hash <- catalogo_capta_hash %>%
   select(NPAIS, NCANAL, NSUCURSAL, NFOLIO, HASH_MAP_CU) %>% 
   mutate(respuesta=0) %>% 
   unique()
 
-
+#Unimos los dos catálogos
 catalogo <- catalogo_hash %>% 
   bind_rows(catalogo_capta_hash)
 
-rm(catalogo_capta_hash,catalogo_hash)
+#rm(catalogo_capta_hash,catalogo_hash)
 
 # Obtenemos los datos trans de las personas de captación 
 # con = dbConnect(drv = SQLite(), dbname = "BAZ.db")
@@ -46,14 +45,25 @@ rm(catalogo_capta_hash,catalogo_hash)
 # 
 # saveRDS(trans_capta,"transac_capta.RDS")
 
-
-##################################################################
-# Gers
+# Todo esto es para obtener la fecha de primer surtimiento de las personas de crédito
 th <- read.table('./TH_clientes_capta_credito.txt', header = T, sep=",")
 cap_pag_ini <- read.table("Base_800_CapPagInic_PrimerCompra_3.csv", sep = ",",
   col.names = 
-  c("NPAIS","NCANAL","NSUCURSAL","NFOLIO","FECHA_PRIM_SURT","FIUNIDADNEGOCIO","FCDESCLARGA","FDCSALDOCAPITAL","FILCRACTIVA","CAP_ACTUAL","CAPDISP_ACTUAL","CAPPAGO_INI","MARCA")) %>% 
+  c("NPAIS",
+    "NCANAL",
+    "NSUCURSAL",
+    "NFOLIO",
+    "FECHA_PRIM_SURT",
+    "FIUNIDADNEGOCIO",
+    "FCDESCLARGA",
+    "FDCSALDOCAPITAL",
+    "FILCRACTIVA",
+    "CAP_ACTUAL",
+    "CAPDISP_ACTUAL",
+    "CAPPAGO_INI",
+    "MARCA")) %>% 
   select(NPAIS, NCANAL, NSUCURSAL, NFOLIO, FECHA_PRIM_SURT)
+
 aux <- cap_pag_ini %>% 
   left_join(th) %>% 
   left_join(catalogo_hash) %>% 
@@ -65,35 +75,40 @@ aux <- cap_pag_ini %>%
   filter(anio2 %in% c(2014,2015))
 
 ##################################################################
+#Leemos las transacciones de las personas de captación y convertimos a fecha el primer surtimiento y
+#la fecha de transacción
 trans_capta <- readRDS("transac_capta.RDS") %>% 
   group_by(HASH_MAP_CU) %>% 
+  #Aquí da igual tomar el mínimo porque en sqlite yo hice esta variable entonces el min, max o solo convertir la 
+  #variable dan lo mismo
   mutate(FECHA_PRIM_SURT2 = as.Date(min(FECHA_PRIM_SURT), format = "%Y-%m-%d"),
          T071_DAT_OPERATION = as.Date(T071_DAT_OPERATION, format = "%Y-%m-%d"))
 
-
+#Leemos las transacciones de las personas de crédito y convertimos a fecha el primer surtimiento y
+#la fecha de transacción
 transac <- readRDS("./transacciones_2014_2015.RDS") %>% 
-  left_join(catalogo) %>% 
+  left_join(catalogo2) %>% 
   group_by(HASH_MAP_CU) %>% 
+  #POR QUÉ ELEGIMOS EL MIN COMO LA FECHA DE PRIMER SURTIMIENTO ??????????
   mutate(FECHA_PRIM_SURT2 = as.Date(min(FECHA_PRIM_SURT), format = "%Y-%m-%d"),
          T071_DAT_OPERATION = as.Date(T071_DAT_OPERATION, format = "%Y-%m-%d")) %>% 
   filter(HASH_MAP_CU %in% aux$HASH_MAP_CU,
          T071_AMOUNT != 0)
 
-transac2 <- rbind(trans_capta,transac)
+#Pegamos los dos df de transacciones...ya todo está listo para obtener las variable que planeamos ocupar
+#en los modelos
+transac2 <- rbind(trans_capta,transac) %>% 
+  left_join(catalogo)
 
 transac <- transac2;rm(transac2,trans_capta)
 
 saveRDS(transac,"trans_cred_2014_2015_capta.RDS")
-# a <- transac %>% 
-#   select(HASH_MAP_CU, HASH_MAP_CTA) %>% 
-#   unique %>% 
-#   group_by(HASH_MAP_CU) %>% 
-#   tally() %>%
-#   ungroup() %>% 
-#   arrange(desc(n))
 
+transac <- readRDS("trans_cred_2014_2015_capta.RDS")
 
-# Variables para 6 meses --------------------------------------------------
+# Funciones para crear las variables que vamos a ocupar en los modelos-----------------------------
+
+#Obtenemos el total de abonos (pos) o retiros (neg)
 cuenta_pos_neg <- function(col, cond){
   if(cond)
     res <- length(col[col>0])
@@ -102,6 +117,7 @@ cuenta_pos_neg <- function(col, cond){
   return(res)
 }
 
+#Sacamos la suma dependiendo de abonos (pos) o retiros (neg)
 sum_pos_neg <- function(col, cond){
   if(cond)
     res <- sum(col[col>0])
@@ -110,6 +126,7 @@ sum_pos_neg <- function(col, cond){
   return(res)
 }
 
+#Sacamos el máximo dependiendo de si fue abono (pos) o retiro (neg)
 max_pos_neg <- function(col, cond){
   if(cond){
     col <- col[col>0]
@@ -122,6 +139,7 @@ max_pos_neg <- function(col, cond){
   return(res)
 }
 
+#Sacamos el mínimo dependiendo de si fue abono (pos) o retiro (neg)
 min_pos_neg <- function(col, cond){
   if(cond){
     col <- col[col>0]
@@ -134,6 +152,7 @@ min_pos_neg <- function(col, cond){
   return(res)
 }
 
+#Sacamos la mediana dependiendo si son abonos (pos) o retiros (neg)
 median_pos_neg <- function(col, cond){
   if(cond){
     col <- col[col>0]
@@ -146,8 +165,13 @@ median_pos_neg <- function(col, cond){
   return(res)
 }
 
+#############################################################################################
+#Abajo está lo que vamos a hacer para cada una de las ventanas de tiempo que tenemos        #
+#este ejemplo después lo convertimos en una función para poder sacar en distintas ventanas  #
+#las mismas variables.                                                                      #
+#Todas estas variables las vamos a ocupar en los modelos                                    #
+#############################################################################################
 
-# 
 # fecha_max_abono_6M <- transac %>% 
 #   filter(difftime(FECHA_PRIM_SURT2, T071_DAT_OPERATION, units = "days") <= 180,
 #          difftime(FECHA_PRIM_SURT2, T071_DAT_OPERATION, units = "days") >= 0) %>% 
@@ -173,6 +197,9 @@ median_pos_neg <- function(col, cond){
 #   select(HASH_MAP_CU, dias_dif_min_6M)
 # 
 
+#Esta función genera texto. Este texto dsps lo vamos a evaluar y así obtenemos las variables que 
+#queremos con los nombres que queremos. Recibe como argumento los nombres que queremos tengan las 
+#variables y el df
 gen_txt <- function(df,ventana,dias_dif_max,dias_dif_min,num_trans,num_abonos,num_retiros,med_gral,med_abonos,
                     med_retiros,max_abono,max_retiro,min_abono,min_retiro,sum_abono,sum_retiro,
                     coc_abonos_retiro,coc_max_abono,coc_max_retiro,coc_abono_gral,coc_retiro_gral){
@@ -231,7 +258,8 @@ gen_txt <- function(df,ventana,dias_dif_max,dias_dif_min,num_trans,num_abonos,nu
   return(texto)
 }
 
-
+#Esta función genera los nombres de las variables y del df con los que alimentamos la función de arriba
+#Básicamente lo q hacemos es poner como subíndice el tamaño de la ventana.
 gen_vrbs <- function(n){
   texto <- gen_txt(paste0("df_",n), 
                    n,
@@ -257,12 +285,13 @@ gen_vrbs <- function(n){
   return(texto)
 }
 
+#Creamos las variables para el último mes (30 días), para los últimos tres meses (90 días), para los 
+#últimos seis meses (180 días) y para el último año (360 días).
 for(i in c(30,90,180,360)){
   eval(parse(text = gen_vrbs(i)))
 }
 
 #Juntamos los df
-
 df <- df_30 %>% 
   full_join(df_90,by=c("HASH_MAP_CU")) %>% 
   full_join(df_180,by=c("HASH_MAP_CU")) %>% 
@@ -270,6 +299,7 @@ df <- df_30 %>%
   mutate_each(funs(replace(., which(is.na(.)), 0))) %>% 
   as.data.frame()
 
+#Creamos algunas variables de interacción entre los df que acabamos de unir
 df2 <- df %>% 
   mutate(coc_90_180_gral=ifelse(med_gral_180==0,0,med_gral_90/med_gral_180),
          coc_90_180_abonos=ifelse(med_abonos_180==0,0,med_abonos_90/med_abonos_180),
@@ -280,8 +310,8 @@ df <- df2;rm(df2)
 saveRDS(df,"df_solo_resumen_trans.RDS")
 
 df <- readRDS("df_solo_resumen_trans.RDS")
-# CPs --------------------------------------------------
 
+# CPs --------------------------------------------------
 datos <- readRDS("./crédito y captación.RDS")
 names(datos) <- gsub(" ", "_", names(datos))
 datos <- datos %>% 
@@ -342,23 +372,4 @@ df2 <- df %>%
 df <- df2;rm(df2)
 
 saveRDS(df,"df_resumen_variables_transaccionales_crimen_pobreza.RDS")
-
-
-# Seleccionamos a las personas de captación ---------------------------------------------
-# 
-# capta <- read.table("Base_muestra1_500mil_salida.txt",sep="|",header = T)
-# 
-# prueba <- capta %>% 
-#   group_by(NPAIS,NCANAL,NSUCURSAL,NFOLIO) %>% 
-#   summarise(anio=max(ANIO_OPERA)) %>% 
-#   filter(anio!=2013)
-# 
-# muestra <- sample(nrow(prueba),size = 60000)
-# 
-# muestra2 <- prueba[muestra,] %>% 
-#   select(-anio)
-# 
-# write.table(muestra2,"codigos_capta.csv",sep=",",row.names = F,col.names = F)
-# 
-# rm(capta)
 

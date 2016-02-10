@@ -8,8 +8,8 @@ library(gbm)
 library(ROCR)
 library(ggplot2)
 
-df <- readRDS("../../output/Modelos/df_resumen_variables_transaccionales_crimen_pobreza.RDS") %>%
-  select(-c(81,83:112)) %>% 
+df <- readRDS("df_resumen_variables_transaccionales_crimen_pobreza.RDS") %>%
+  select(-c(81,83:98,103:110,112)) %>% 
   mutate(respuesta = as.factor(respuesta))
 
 df <- df[sample(nrow(df)),]
@@ -20,33 +20,40 @@ df_entrenamiento <- df[sample(nrow(df),size = round(nrow(df)*.7,0)),]
 df_prueba <- df %>% 
   anti_join(df_entrenamiento,by="HASH_MAP_CU")
 
-saveRDS(df_entrenamiento,"../../output/Modelos/Entrenamiento.RDS")
-saveRDS(df_prueba,"../../output/Modelos/Prueba.RDS")
+saveRDS(df_entrenamiento,"Entrenamiento.RDS")
+saveRDS(df_prueba,"Prueba.RDS")
 
+df2 <- df_prueba %>% 
+  select(2:81) %>% 
+  mutate(respuesta = as.numeric(respuesta))
 
+corrs <-  cor(df2,use="complete.obs",method="spearman")
+library(corrplot)
+
+corrplot(corrs,tl.cex=.5,tl.col="black",order="AOE")
 # Selección de Variables --------------------------------------------------
-# 
-# cluster <- makeCluster(6)
-# registerDoParallel(cluster)
-# rf_model <- train(respuesta ~ .,
-#                 data=select(df_entrenamiento,-HASH_MAP_CU),
-#                 method="rf",
-#                 importance = T,
-#                 ntree=30,
-#                 trControl=trainControl(method="cv",number=5),
-#                 allowParallel=TRUE)
-# stopCluster(cluster)
-# 
-# saveRDS(rf_model,"../../output/Modelos/Modelo_Bosque_1.RDS")
-# 
-# rf_model <- readRDS("../../output/Modelos/Modelo_Bosque_1.RDS")
-# x <- varImp(rf_model,scale=F)
-# 
-# pred_entrena <- predict(rf_model,select(df_entrenamiento,-HASH_MAP_CU,-respuesta))
-# confusionMatrix(pred_entrena,df_entrenamiento$respuesta)
-# 
-# pred_prueba <- predict(rf_model,select(df_prueba,-HASH_MAP_CU,-respuesta))
-# confusionMatrix(pred_prueba,df_prueba$respuesta)
+
+cluster <- makeCluster(6)
+registerDoParallel(cluster)
+rf_model <- train(respuesta ~ .,
+                data=select(df_entrenamiento,-HASH_MAP_CU),
+                method="rf",
+                importance = T,
+                ntree=30,
+                trControl=trainControl(method="cv",number=5),
+                allowParallel=TRUE)
+stopCluster(cluster)
+
+saveRDS(rf_model,"Modelo_Bosque_1.RDS")
+
+rf_model <- readRDS("Modelo_Bosque_1.RDS")
+x <- varImp(rf_model,scale=F)
+
+pred_entrena <- predict(rf_model,select(df_entrenamiento,-HASH_MAP_CU,-respuesta))
+confusionMatrix(pred_entrena,df_entrenamiento$respuesta)
+
+pred_prueba <- predict(rf_model,select(df_prueba,-HASH_MAP_CU,-respuesta))
+confusionMatrix(pred_prueba,df_prueba$respuesta)
 
 # Bosque usando las variables seleccionadas ------------------------------------------
 
@@ -82,9 +89,9 @@ rf2_model <- train(as.factor(respuesta) ~ .,
                 allowParallel=TRUE)
 stopCluster(cluster)
 
-saveRDS(rf2_model,"../../output/Modelos/Modelo_Bosque_2.RDS")
+saveRDS(rf2_model,"Modelo_Bosque_2.RDS")
 
-rf2_model <- readRDS("../../output/Modelos/Modelo_Bosque_2.RDS")
+rf2_model <- readRDS("Modelo_Bosque_2.RDS")
 varImp(rf2_model,scale=F)
 
 pred_entrena2 <- predict(rf2_model,select(df_entrenamiento,-HASH_MAP_CU,-respuesta))
@@ -114,7 +121,7 @@ svm_model <- ksvm(as.factor(respuesta) ~ .,
                                 num_retiros_90,
                                 coc_max_abono_180,
                                 num_abonos_180,
-                                #dimension_crimen,
+                                dimension_crimen,
                                 max_abono_180,
                                 med_abonos_30,
                                 sum_abono_360,
@@ -123,9 +130,9 @@ svm_model <- ksvm(as.factor(respuesta) ~ .,
                   C = 5,
                   cross=10)
  
-saveRDS(svm_model,"../../output/Modelos/Modelo_SVM.RDS")
+saveRDS(svm_model,"Modelo_SVM.RDS")
 
-svm_model <- readRDS("../../output/Modelos/Modelo_SVM.RDS")
+svm_model <- readRDS("Modelo_SVM.RDS")
 
 pred_entrena3 <- predict(svm_model,select(df_entrenamiento,-HASH_MAP_CU,-respuesta))
 confusionMatrix(pred_entrena3,df_entrenamiento$respuesta)
@@ -147,7 +154,7 @@ pred_prueba3 <- predict(svm_model, select(df_prueba,
                                           num_retiros_90,
                                           coc_max_abono_180,
                                           num_abonos_180,
-                                          #dimension_crimen,
+                                          dimension_crimen,
                                           max_abono_180,
                                           med_abonos_30,
                                           sum_abono_360,
@@ -176,7 +183,7 @@ log_model <- glm(respuesta ~ ., data = select(df_entrenamiento,
                                                num_retiros_90,
                                                coc_max_abono_180,
                                                num_abonos_180,
-                                               #dimension_crimen,
+                                               dimension_crimen,
                                                max_abono_180,
                                                med_abonos_30,
                                                sum_abono_360,
@@ -199,16 +206,14 @@ pred_prueba4 <- predict(modelo_log, newdata = select(df_prueba,
                                                     num_retiros_90,
                                                     coc_max_abono_180,
                                                     num_abonos_180,
-                                                    #dimension_crimen,
+                                                    dimension_crimen,
                                                     max_abono_180,
                                                     med_abonos_30,
                                                     sum_abono_360,
                                                     coc_max_retiro_90),
                        type = 'response')
 
-saveRDS(log_model,"../../output/Modelos/Modelo_reg_log.RDS")
-
-log_model <- readRDS("../../output/Modelos/Modelo_reg_log.RDS")
+saveRDS(log_model,"Modelo_reg_log.RDS")
 
 confusionMatrix(round(pred_prueba4), df_prueba$respuesta)
 
@@ -232,7 +237,7 @@ model_gb <- train(respuesta ~ . ,
                                 num_retiros_90,
                                 coc_max_abono_180,
                                 num_abonos_180,
-                                #dimension_crimen,
+                                dimension_crimen,
                                 max_abono_180,
                                 med_abonos_30,
                                 sum_abono_360,
@@ -256,15 +261,13 @@ pred_prueba_gb <- predict(model_gb, newdata = select(df_prueba,
                                                      num_retiros_90,
                                                      coc_max_abono_180,
                                                      num_abonos_180,
-                                                     #dimension_crimen,
+                                                     dimension_crimen,
                                                      max_abono_180,
                                                      med_abonos_30,
                                                      sum_abono_360,
                                                      coc_max_retiro_90))
 
-saveRDS(model_gb,"../../output/Modelos/Modelo_GB.RDS")
-
-model_gb <- readRDS("../../output/Modelos/Modelo_GB.RDS")
+saveRDS(model_gb,"Modelo_GB.RDS")
 
 confusionMatrix(pred_prueba_gb, df_prueba$respuesta)
 
@@ -370,4 +373,5 @@ graf_roc <- ggplot() +
     panel.grid.major = element_line(colour = 'grey70', linetype = 'dashed'),
     panel.grid.minor = element_line(colour = 'grey70', linetype = 'dashed'))
 
-saveRDS(graf_roc,"../../output/Modelos/Graf_curva_roc_4_modelos.RDS")
+saveRDS(graf_roc,"Graf_curva_roc_4_modelos.RDS")
+
