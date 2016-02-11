@@ -5,13 +5,17 @@ date: "Febrero, 2016"
 output: html_document
 ---
 
-```{r}
+```{r setup}
 library(ggplot2)
 library(lubridate)
 library(dplyr)
 library(caret)
 library(kernlab)
+```
 
+
+```{r, eval=FALSE}
+# Preprocesamiento para la predicción
 df2 <- readRDS("../../output/Modelos/Prueba_sept_df/df_prueba_sept_final.RDS")
 
 #Cargamos los modelos
@@ -56,5 +60,7 @@ predicciones2 <- predicciones %>%
   mutate(comb = ifelse(log + gb + rf >=1,1,0))
 
 confusionMatrix(predicciones2$comb, predicciones2$ventana)
+
+saveRDS(predicciones2, file = "../../output/Modelos/Prueba_sept_df/predicciones_prueba_sept.RDS")
 ```
 
