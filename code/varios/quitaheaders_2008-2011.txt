@@ -1,0 +1,5 @@
+tail -n +2 2008.txt > 2008.txt.noheader
+tail -n +2 2009.txt > 2009.txt.noheader
+tail -n +2 2010.txt > 2010.txt.noheader
+tail -n +2 2011.txt > 2011.txt.noheader
+

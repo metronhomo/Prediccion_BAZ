@@ -1,0 +1,2 @@
+.separator ","
+.import prim_surt_cred.txt prim_surt_cred

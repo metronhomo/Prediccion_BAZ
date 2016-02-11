@@ -1,0 +1,66 @@
+---
+title: "Caracterización clientes"
+author: "MetronHomo"
+date: "Febrero, 2016"
+output: html_document
+---
+
+```{r setup}
+library(ggplot2)
+library(lubridate)
+library(dplyr)
+library(caret)
+library(kernlab)
+```
+
+
+```{r, eval=FALSE}
+# Preprocesamiento para la predicción
+df2 <- readRDS("../../output/Modelos/Prueba_sept_df/df_prueba_sept_final.RDS")
+
+#Cargamos los modelos
+rf2_model <- readRDS("../../output/Modelos/Modelo_Bosque_2.RDS")
+log_model <- readRDS("../../output/Modelos/Modelo_reg_log.RDS")
+svm_model <- readRDS("../../output/Modelos/Modelo_SVM.RDS")
+gb_model <- readRDS("../../output/Modelos/Modelo_GB.RDS")
+
+#Probamos los modelos en la base nueva
+rf_pred <- predict(rf2_model,df2,type="prob")
+rf_pred$pred <- 0
+rf_pred[(which(rf_pred[,1] < rf_pred[,2])),3] <- 1
+confusionMatrix(rf_pred$pred, df2$ventana)
+
+log_pred <- predict(log_model,df2,type="response")
+log_pred <- as.data.frame(log_pred)
+log_pred$pred <- 0
+log_pred[(which(log_pred>.5)),2] <- 1
+confusionMatrix(log_pred$pred, df2$ventana)
+
+svm_pred <- predict(svm_model,df2)
+svm_pred <- as.data.frame(svm_pred)
+svm_pred$pred <- 0
+svm_pred[(which(svm_pred[,1] < svm_pred[,2])),3] <- 1
+
+gb_pred <- predict(gb_model,df2,type="prob")
+length(which(gb_pred[,1] < gb_pred[,2]))
+gb_pred$pred <- 0
+gb_pred[(which(gb_pred[,1] < gb_pred[,2])),3] <- 1
+confusionMatrix(gb_pred$pred, df2$ventana)
+
+
+#Hacemos un df con las predicciones de cada uno de los modelos
+predicciones <- data.frame(HASH_MAP_CU=df2$HASH_MAP_CU,
+                           rf=rf_pred[,3],
+                           gb=gb_pred[,3],
+                           log=log_pred[,2],
+                           credito=df2$credito,
+                           ventana=df2$ventana)
+#Combinamos respuestas
+predicciones2 <- predicciones %>% 
+  mutate(comb = ifelse(log + gb + rf >=1,1,0))
+
+confusionMatrix(predicciones2$comb, predicciones2$ventana)
+
+saveRDS(predicciones2, file = "../../output/Modelos/Prueba_sept_df/predicciones_prueba_sept.RDS")
+```
+

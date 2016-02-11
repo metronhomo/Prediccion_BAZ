@@ -1,0 +1,109 @@
+---
+title: "Modelado"
+author: "Metronhomo"
+date: "January 14, 2016"
+output: html_document
+---
+
+En este trabajo utilizamos una base de datos que contiene 74,384 personas. Cada una de las personas tiene variables que hablan acerca de su estabilidad económica, variables relacionadas a la criminalidad de la zona en la que vive y una variable que indica la marginación de la zona en la que vive. Esta base hay 18,746 personas que se convirtieron a crédito en los años 2014 y 2015; el resto de las personas en la base solo tienen cuenta de captación. 
+
+Las variables que hablan sobre su estabilidad económica se obtuvieron haciendo resúmenes de sus transacciones, ejemplos de esto son el balance de los 30 días anteriores al surtimiento de su primer crédito o el número de transacciones realizado en el semestre anterior al surtimiento de su primer crédito. Este trabajo busca encontrar un modelo que reproduzca, de la mejor manera posible, la realidad mostrada en la base de datos antes mencionada.
+
+Para lograr lo anterior probamos cuatro modelos: **Regresión Logística, Bosques aleatorios, Gradient Boosting y SVM**. A continuación mostramos los resultados obtenidos:
+
+In the next section we show the performance of the models fitted:
+
+```{r,echo=FALSE,message=FALSE,warning=FALSE}
+library(dplyr)
+library(randomForest)
+library(caret)
+library(doParallel)
+library(kernlab)
+library(corrplot)
+library(gbm)
+library(ROCR)
+library(ggplot2)
+
+df_prueba <- readRDS("Prueba.RDS")
+rf2_model <- readRDS("Modelo_Bosque_2.RDS")
+svm_model <- readRDS("Modelo_SVM.RDS")
+log_model <- readRDS("Modelo_reg_log.RDS")
+gb_model <- readRDS("Modelo_GB.RDS")
+graf_roc <- readRDS("Graf_curva_roc_4_modelos.RDS")
+```
+
+#Bosques Aleatorios
+```{r,echo=FALSE,message=FALSE,warning=FALSE}
+pred_prueba2 <- predict(rf2_model,select(df_prueba,-HASH_MAP_CU,-respuesta))
+confusionMatrix(pred_prueba2,df_prueba$respuesta)
+```
+
+#Gradient Boosting
+```{r,echo=FALSE,message=FALSE,warning=FALSE}
+pred_prueba_gb <- predict(gb_model, newdata = select(df_prueba,           
+                                                     num_trans_30,
+                                                     num_trans_360,
+                                                     coc_abono_retiro_90,
+                                                     dias_dif_max_360,
+                                                     coc_abono_retiro_180,
+                                                     dias_dif_min_360,
+                                                     dias_dif_min_30,
+                                                     min_abono_360,
+                                                     max_abono_360,
+                                                     coc_abono_retiro_30,
+                                                     med_abonos_360,
+                                                     dias_dif_max_30,
+                                                     num_retiros_90,
+                                                     coc_max_abono_180,
+                                                     num_abonos_180,
+                                                     dimension_crimen,
+                                                     max_abono_180,
+                                                     med_abonos_30,
+                                                     sum_abono_360,
+                                                     coc_max_retiro_90))
+confusionMatrix(pred_prueba_gb, df_prueba$respuesta)
+```
+
+#Logistic Regression
+```{r,echo=FALSE,message=FALSE,warning=FALSE}
+pred_prueba <- predict(log_model, newdata = select(df_prueba,           
+                                                    num_trans_30,
+                                                    num_trans_360,
+                                                    coc_abono_retiro_90,
+                                                    dias_dif_max_360,
+                                                    coc_abono_retiro_180,
+                                                    dias_dif_min_360,
+                                                    dias_dif_min_30,
+                                                    min_abono_360,
+                                                    max_abono_360,
+                                                    coc_abono_retiro_30,
+                                                    med_abonos_360,
+                                                    dias_dif_max_30,
+                                                    num_retiros_90,
+                                                    coc_max_abono_180,
+                                                    num_abonos_180,
+                                                    dimension_crimen,
+                                                    max_abono_180,
+                                                    med_abonos_30,
+                                                    sum_abono_360,
+                                                    coc_max_retiro_90),
+                       type = 'response')
+confusionMatrix(round(pred_prueba), df_prueba$respuesta)
+```
+
+#SVM
+```{r,echo=FALSE,message=FALSE,warning=FALSE}
+pred_entrena3 <- predict(svm_model,select(df_prueba,-HASH_MAP_CU,-respuesta))
+confusionMatrix(pred_entrena3,df_prueba$respuesta)
+```
+
+As we can see the four models have a good performance. The random forest has the best results from all of them with 95% accuracy in the test sample; 94.5% of accuracy in predicting that a customer have just savings account and a 98.8% accuracy on predicting that a custemer has a credit. This results might sound promising but we must stay calm and keep repeating the test over the four models to ensure that a direct campaign could have the expected results.
+
+#ROC CURVE
+
+Finally we show the curve ROC of the models. Here we can see that the performance of the random forest and the gradient
+
+```{r,echo=FALSE,message=FALSE,warning=FALSE,fig.align='center',fig.height=7,fig.width=9}
+graf_roc
+```
+

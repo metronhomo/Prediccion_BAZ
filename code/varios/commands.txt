@@ -1,0 +1,11 @@
+.separator ","
+.import 2006.txt transacciones
+.import 2007.txt transacciones
+.import 2008.txt transacciones
+.import 2009.txt transacciones
+.import 2010.txt transacciones
+.import 2011.txt transacciones
+.import 2012.txt transacciones
+.import 2013.txt transacciones
+.import 2014.txt transacciones
+.import 2015.txt transacciones

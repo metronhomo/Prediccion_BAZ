@@ -1,0 +1,48 @@
+En la carpeta donde está la base: sqlite3 BAZ.db
+
+CREATE TABLE catalogo ("Pais" INTEGER NOT NULL, "Canal" INTEGER NOT NULL, "Sucursal" INTEGER NOT NULL, "Folio" INTEGER NOT NULL,"T071_ACC" VARCHAR(8) NOT NULL, "HASH_MAP_CU" VARCHAR(24) NOT NULL, "HASH_MAP_CTA" VARCHAR(24) NOT NULL);
+
+CREATE TABLE transacciones ("HASH_MAP_CTA" VARCHAR(24) NOT NULL, "HASH_MAP_CU" VARCHAR(24) NOT NULL, "T071_NUM_OPERATION" INTEGER NOT NULL, "T071_CODE" VARCHAR(3) NOT NULL, "T071_AMOUNT" FLOAT NOT NULL, "T071_DAT_ACCT" DATE NOT NULL, "T071_DAT_OPERATION" DATE NOT NULL, "T071_TIM_OPERATION" VARCHAR(4) NOT NULL, "T071_FCC" VARCHAR(3) NOT NULL, "T071_INTREF" VARCHAR(10), "T071_TYP_ACCT" VARCHAR(3) NOT NULL, "T071_FLG_AUTOMAN" TIME NOT NULL, "T071_FLG_CREDEB" VARCHAR(1) NOT NULL);
+
+
+.separator ","
+.import Catalogo.txt catalogo
+.import Anterior_2005.txt transacciones
+.import 2005.txt transacciones
+.import 2006.txt transacciones
+.import 2007.txt transacciones
+.import 2008.txt transacciones
+.import 2009.txt transacciones
+.import 2010.txt transacciones
+.import 2011.txt transacciones
+.import 2012.txt transacciones
+.import 2013.txt transacciones
+.import 2014.txt transacciones
+.import 2015.txt transacciones
+
+# Lo siguiente porque se importa la base con el header
+(Lo corrí en SQLiteman)
+delete from catalogo where Pais = 'Pais'
+delete from transacciones where HASH_MAP_CTA = 'HASH_MAP_CTA'
+
+########################################################################################
+
+Para importar todos los archivos en un solo comando se puede crear el archivo "commands.txt" con lo siguiente:
+.separator ","
+.import Catalogo.txt catalogo
+.import Anterior_2005.txt transacciones
+.import 2005.txt transacciones
+.import 2006.txt transacciones
+.import 2007.txt transacciones
+.import 2008.txt transacciones
+.import 2009.txt transacciones
+.import 2010.txt transacciones
+.import 2011.txt transacciones
+.import 2012.txt transacciones
+.import 2013.txt transacciones
+.import 2014.txt transacciones
+.import 2015.txt transacciones
+
+
+
+Y después en la terminal simplemente hacer: sqlite3 BAZ.db < commands.txt

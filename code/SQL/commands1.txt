@@ -1,0 +1,2 @@
+.separator ","
+.import Catalogo.txt catalogo_HASH
