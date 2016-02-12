@@ -9,12 +9,20 @@ output: html_document
 library(ggplot2)
 library(lubridate)
 library(dplyr)
-library(caret)
-library(kernlab)
+#library(gridExtra)
+
+knitr::opts_chunk$set(echo=FALSE, 
+                      warning=FALSE, 
+                      message=FALSE, 
+                      #cache=TRUE, 
+                      fig.align="center")
 ```
 
-
+<!--
 ```{r, eval=FALSE}
+library(caret)
+library(kernlab)
+
 # Preprocesamiento para la predicción
 df2 <- readRDS("../../output/Modelos/Prueba_sept_df/df_prueba_sept_final.RDS")
 
@@ -63,4 +71,158 @@ confusionMatrix(predicciones2$comb, predicciones2$ventana)
 
 saveRDS(predicciones2, file = "../../output/Modelos/Prueba_sept_df/predicciones_prueba_sept.RDS")
 ```
+-->
+
+
+```{r}
+predicciones <- readRDS(
+  "../../output/Modelos/Prueba_sept_df/predicciones_prueba_sept.RDS")
+
+```
+```{r}
+df_prueba <- readRDS(
+  "../../output/Modelos/Prueba_sept_df/df_prueba_sept_final.RDS")
+
+```
+
+```{r}
+
+df_prueba$respuesta <- predicciones$rf
+```
+
+```{r}
+x_axis_vert <- function(ang = 90) theme(axis.text.x = element_text(angle = ang, vjust = 0.5, hjust=1))
+
+get_name <- function(object) {out<-deparse(substitute(object)); out} 
+
+```
+
+```{r}
+plot_distribucion_modelo <- function(df, var) {
+  text = paste0(
+    "a <- ",
+    get_name(df), " %>% 
+      mutate(var2 = abs(", var, ")) %>% 
+      group_by(respuesta) %>% 
+      summarise(q = quantile(var2, na.rm = TRUE, 0.95))
+    max_q95 <- max(a$q)
+    gg_temp <-", get_name(df), "%>% 
+    mutate(var2 = abs(", var, ")) %>% 
+    group_by(respuesta) %>% 
+    ggplot(aes(var2)) +
+    geom_histogram() +
+    facet_wrap(~respuesta, scales = 'free') +
+    xlab(", get_name(var), ") +
+    ylab('Número de clientes')
+    gg_temp + 
+    xlim(0,  max_q95) 
+    ")
+  return(eval(parse(text = text)))
+}
+
+```
+
+```{r}
+vars <- c("num_trans_30",
+          "num_abonos_30",
+          "num_retiros_30",
+          "med_gral_30",
+          "med_abonos_30",
+          "med_retiros_30",
+          "max_abono_30",
+          "max_retiro_30",
+          "min_abono_30",
+          "min_retiro_30",
+          "sum_abono_30",
+          "sum_retiro_30",
+          "coc_abono_retiro_30",
+          "coc_max_abono_30",
+          "coc_max_retiro_30",
+          "coc_abono_gral_30",
+          "coc_retiro_gral_30",
+          "dias_dif_min_30",
+          "dias_dif_max_30",
+          "num_trans_90",
+          "num_abonos_90",
+          "num_retiros_90",
+          "med_gral_90",
+          "med_abonos_90",
+          "med_retiros_90",
+          "max_abono_90",
+          "max_retiro_90",
+          "min_abono_90",
+          "min_retiro_90",
+          "sum_abono_90",
+          "sum_retiro_90",
+          "coc_abono_retiro_90",
+          "coc_max_abono_90",
+          "coc_max_retiro_90",
+          "coc_abono_gral_90",
+          "coc_retiro_gral_90",
+          "dias_dif_min_90",
+          "dias_dif_max_90",
+          "num_trans_180",
+          "num_abonos_180",
+          "num_retiros_180",
+          "med_gral_180",
+          "med_abonos_180",
+          "med_retiros_180",
+          "max_abono_180",
+          "max_retiro_180",
+          "min_abono_180",
+          "min_retiro_180",
+          "sum_abono_180",
+          "sum_retiro_180",
+          "coc_abono_retiro_180",
+          "coc_max_abono_180",
+          "coc_max_retiro_180",
+          "coc_abono_gral_180",
+          "coc_retiro_gral_180",
+          "dias_dif_min_180",
+          "dias_dif_max_180",
+          "num_trans_360",
+          "num_abonos_360",
+          "num_retiros_360",
+          "med_gral_360",
+          "med_abonos_360",
+          "med_retiros_360",
+          "max_abono_360",
+          "max_retiro_360",
+          "min_abono_360",
+          "min_retiro_360",
+          "sum_abono_360",
+          "sum_retiro_360",
+          "coc_abono_retiro_360",
+          "coc_max_abono_360",
+          "coc_max_retiro_360",
+          "coc_abono_gral_360",
+          "coc_retiro_gral_360",
+          "dias_dif_min_360",
+          "dias_dif_max_360",
+          "coc_90_180_gral",
+          "coc_90_180_abonos",
+          "coc_90_180_retiros")
+
+# grafs <- lapply(vars, function(x) {
+#   plot_distribucion_modelo(df_prueba, x)
+#   })  
+```
+
+```{r}
+for(x in vars) {
+  print(
+    plot_distribucion_modelo(df_prueba, x)
+  )
+}
+# 
+# grafs <- lapply(vars, function(x) {
+#   print(
+#     plot_distribucion_modelo(df_prueba, x)
+#   )
+#   })  
+
+#do.call("grid.arrange", c(grafs, ncol = 2))
+```
+
+
 
