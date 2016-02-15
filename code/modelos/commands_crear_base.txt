@@ -1,0 +1,5 @@
+# Comandos para crear la tabla de transacciones que R lee y con la que calcula el modelo de predicción
+
+# Filtra las claves de los clientes de crédito que se usan y las guarda en un CSV
+sqlite3 ../../data/SQL/BAZ.db < commands_filtro_cred.txt
+

@@ -1,0 +1,13 @@
+--Filtra las claves de los usuarios de crédito cuya fecha de primer surtimiento es mayor o igual a 1 de enero de 2014
+--y las guarda en un archivo csv
+
+.mode csv
+.output ../../output/Modelos/claves_cred_prim_surt_2014_2015.csv
+
+select NPAIS, NCANAL, NSUCURSAL, NFOLIO, HASH_MAP_CTA, FECHA_PRIM_SURT  from
+	(select * from prim_surt_cred where FECHA_PRIM_SURT >= '2014-01-01') a
+	left join catalogo_hash b on
+	a.NPAIS = b.Pais and
+	a.NCANAL = b.Canal and
+	a.NSUCURSAL = b.Sucursal and
+	a.NFOLIO = b.Folio;

@@ -1,0 +1,2 @@
+.separator "\t"
+.import ../../output/Modelos/captacion_sociodemograficos.tsv captacion_sociodemograficos
